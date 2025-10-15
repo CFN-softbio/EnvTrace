@@ -1,0 +1,255 @@
+{
+  "full_score": 0.9908710736422496,
+  "accuracy": true,
+  "metrics": {
+    "discrete": {
+      "score": 1.0,
+      "binary_pass": true,
+      "details": {
+        "mismatch_rate": 0.0,
+        "exact": true,
+        "value_matches": 5,
+        "total_pairs": 5,
+        "gt_event_count": 5,
+        "pred_event_count": 5,
+        "aligned_gt": [
+          [
+            "motor:x",
+            0.0,
+            0.0
+          ],
+          [
+            "det:AcquireTime",
+            0.05,
+            1.0
+          ],
+          [
+            "det:Acquire",
+            0.1,
+            1
+          ],
+          [
+            "det:Acquire",
+            1.1,
+            0
+          ],
+          [
+            "motor:y",
+            1.2,
+            -0.2
+          ]
+        ],
+        "aligned_pred": [
+          [
+            "motor:x",
+            0.0,
+            0.0
+          ],
+          [
+            "det:AcquireTime",
+            0.05,
+            1.0
+          ],
+          [
+            "det:Acquire",
+            0.12,
+            1
+          ],
+          [
+            "det:Acquire",
+            1.08,
+            0
+          ],
+          [
+            "motor:y",
+            1.21,
+            -0.2
+          ]
+        ]
+      }
+    },
+    "timing": {
+      "score": 0.9543553682112476,
+      "binary_pass": true,
+      "details": {
+        "r2": 0.9994668519006679,
+        "slope": 0.9911764705882352,
+        "mape": 0.1850000000000001,
+        "duration_ratio": 1.0083333333333333,
+        "score": 0.9543553682112476,
+        "r2_score": 0.9994668519006679,
+        "slope_score": 0.9911764705882352,
+        "duration_score": 0.9666666666666667,
+        "mape_score": 0.815
+      }
+    },
+    "structure": {
+      "score": 1.0,
+      "binary_pass": true,
+      "details": {
+        "gap_rate": 0.0,
+        "gaps": 0,
+        "total_pairs": 5
+      }
+    }
+  },
+  "alignment": [
+    [
+      [
+        "motor:x",
+        0.0,
+        0.0
+      ],
+      [
+        "motor:x",
+        0.0,
+        0.0
+      ]
+    ],
+    [
+      [
+        "det:AcquireTime",
+        0.05,
+        1.0
+      ],
+      [
+        "det:AcquireTime",
+        0.05,
+        1.0
+      ]
+    ],
+    [
+      [
+        "det:Acquire",
+        0.1,
+        1
+      ],
+      [
+        "det:Acquire",
+        0.12,
+        1
+      ]
+    ],
+    [
+      [
+        "det:Acquire",
+        1.1,
+        0
+      ],
+      [
+        "det:Acquire",
+        1.08,
+        0
+      ]
+    ],
+    [
+      [
+        "motor:y",
+        1.2,
+        -0.2
+      ],
+      [
+        "motor:y",
+        1.21,
+        -0.2
+      ]
+    ]
+  ],
+  "alignment_rows": [
+    {
+      "index": 1,
+      "gt": {
+        "channel": "motor:x",
+        "timestamp": 0.0,
+        "value": 0.0
+      },
+      "pred": {
+        "channel": "motor:x",
+        "timestamp": 0.0,
+        "value": 0.0
+      },
+      "match": true,
+      "ignored": false
+    },
+    {
+      "index": 2,
+      "gt": {
+        "channel": "det:AcquireTime",
+        "timestamp": 0.05,
+        "value": 1.0
+      },
+      "pred": {
+        "channel": "det:AcquireTime",
+        "timestamp": 0.05,
+        "value": 1.0
+      },
+      "match": true,
+      "ignored": false
+    },
+    {
+      "index": 3,
+      "gt": {
+        "channel": "det:Acquire",
+        "timestamp": 0.1,
+        "value": 1
+      },
+      "pred": {
+        "channel": "det:Acquire",
+        "timestamp": 0.12,
+        "value": 1
+      },
+      "match": true,
+      "ignored": false
+    },
+    {
+      "index": 4,
+      "gt": {
+        "channel": "det:Acquire",
+        "timestamp": 1.1,
+        "value": 0
+      },
+      "pred": {
+        "channel": "det:Acquire",
+        "timestamp": 1.08,
+        "value": 0
+      },
+      "match": true,
+      "ignored": false
+    },
+    {
+      "index": 5,
+      "gt": {
+        "channel": "motor:y",
+        "timestamp": 1.2,
+        "value": -0.2
+      },
+      "pred": {
+        "channel": "motor:y",
+        "timestamp": 1.21,
+        "value": -0.2
+      },
+      "match": true,
+      "ignored": false
+    }
+  ],
+  "aggregation": {
+    "weights": {
+      "discrete": 0.8,
+      "timing": 0.2
+    },
+    "contributions": {
+      "discrete": 0.8,
+      "timing": 0.19087107364224953,
+      "_sum": 0.9908710736422496
+    }
+  },
+  "decision": {
+    "require_discrete_exact": true,
+    "timing_metric_name": "timing",
+    "required_metrics": [],
+    "passes": {
+      "discrete": true,
+      "timing": true
+    }
+  }
+}

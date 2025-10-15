@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "envtrace"
+version = "0.0.1"
+description = "EnvTrace: behavioral evaluation of code through execution trace alignment."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "EnvTrace Contributors" }]
+keywords = ["evaluation", "digital twin", "trace alignment", "LLM", "simulation"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+license = "Apache-2.0"
+urls = { "Homepage" = "https://github.com/CFN-softbio/EnvTrace", "Repository" = "https://github.com/CFN-softbio/EnvTrace" }
+dependencies = [
+    "numpy>=1.21",
+]
+ 
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.5.0",
+    "black>=24.0.0",
+    "pytest>=7.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["envtrace*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[project.scripts]
+envtrace = "envtrace.cli:main"

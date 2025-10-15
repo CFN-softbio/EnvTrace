@@ -1,0 +1,9 @@
+{
+  "events": [
+    { "channel": "motor:x", "timestamp": 0.00, "value": 0.0 },
+    { "channel": "det:AcquireTime", "timestamp": 0.05, "value": 1.0 },
+    { "channel": "det:Acquire", "timestamp": 0.12, "value": 1 },
+    { "channel": "det:Acquire", "timestamp": 1.08, "value": 0 },
+    { "channel": "motor:y", "timestamp": 1.21, "value": -0.2 }
+  ]
+}
