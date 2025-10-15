@@ -2,7 +2,7 @@
 
 **Behavioral evaluation of code through execution trace alignment**
 
-<!-- [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) -->
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 EnvTrace is a domain-agnostic Python toolkit for evaluating code that interacts with physical or simulated environments. Instead of comparing code syntax, EnvTrace compares **what the code actually does** by analyzing execution traces—time-ordered sequences of state changes in the environment.
