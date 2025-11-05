@@ -33,13 +33,7 @@ EnvTrace is a domain-agnostic Python toolkit for evaluating code that interacts 
 - [Advanced Topics](#advanced-topics)
 
 ## Citation
-If you decide to use this library, please consider citing:
-```bibtex
-arXiv submission forthcoming:
-
-EnvTrace: Simulation-Based Semantic Evaluation of LLM Code via Execution Trace Alignment -- Demonstrated at Synchrotron Beamlines
-```
----
+(to be updated)
 
 ## Installation
 
