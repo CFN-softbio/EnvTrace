@@ -51,7 +51,7 @@ These results are analyzed and described in the paper ... (pending release).
 
 **Requirements:** Python 3.10 or higher
 
-### From PyPI (when available)
+### From PyPI (when available, not uploaded yet)
 ```bash
 pip install envtrace
 ```
@@ -71,6 +71,8 @@ pip install -e ".[dev]"
 ---
 
 ## Quick Start
+
+Please view the [interactive notebook](envtrace/examples/notebooks/EnvTrace_Quickstart.ipynb) for a quick interactive experience of the package.
 
 ### Python API
 
