@@ -83,7 +83,7 @@ This document tracks implementation steps toward a pip-installable, well-documen
     - [x] Full score and decision breakdown
 - [ ] CLI (expanded)
   - [ ] `envtrace evaluate --gt-dir ... --pred-dir ... --config config.yaml --out result.json`
-  - [ ] Option to select best among multiple GTs
+  - [x] Option to select best among multiple GTs (`envtrace evaluate --gt a.json b.json ...`)
 
 ---
 
@@ -119,14 +119,14 @@ This document tracks implementation steps toward a pip-installable, well-documen
 
 ## Mapping from current code (for migration)
 
-- [ ] `is_temp_match` → `ContinuousProfileMetric` (generic)
-- [ ] `_compute_pv_match_metrics` → `DiscreteMatchMetric` + `SequenceAligner` + `ValueComparator`
-- [ ] `_timing_match` → `TimingMetric` (R², slope, duration ratio, MAPE)
-- [ ] PV canonicalization and ignore sets → transform/config + comparators
-- [ ] Full score policy:
-  - [ ] with continuous channels: `0.6 * pv_rate + 0.2 * timing + 0.2 * continuous`
-  - [ ] without continuous: `0.8 * pv_rate + 0.2 * timing`
-- [ ] Strict accuracy → `BinaryDecision` thresholds matching paper SI
+- [x] `is_temp_match` → `ContinuousProfileMetric` (generic)
+- [x] `_compute_pv_match_metrics` → `DiscreteMatchMetric` + `SequenceAligner` + `ValueComparator`
+- [x] `_timing_match` → `TimingMetric` (R², slope, duration ratio, MAPE)
+- [x] PV canonicalization and ignore sets → transform/config + comparators
+- [x] Full score policy:
+  - [x] with continuous channels: `0.6 * pv_rate + 0.2 * timing + 0.2 * continuous`
+  - [x] without continuous: `0.8 * pv_rate + 0.2 * timing`
+- [x] Strict accuracy → `BinaryDecision` thresholds matching paper SI
 
 ---
 
@@ -156,7 +156,7 @@ This document tracks implementation steps toward a pip-installable, well-documen
   - [ ] 90%+ unit test coverage on core (events, aligner, metrics, scoring)
 - v0.2.0:
   - [x] Evaluate continuous channels with config-driven scoring
-  - [ ] Reproduce paper’s scoring policies via config
+  - [x] Reproduce paper’s scoring policies via config (`envtrace/examples/paper/`: `paper_config.json`, checked against every stored main-batch score by `check_against_paper.py`)
 - v0.3.0:
   - [ ] Demonstrate evaluation using provided JSON traces and custom metrics (no simulator/adapters required)
 - v1.0:
