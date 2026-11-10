@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, Optional, Callable, List
 from envtrace.core.event import Trace, Event
 from envtrace.core.alignment import SequenceAligner, DifflibAligner, Pair
@@ -27,6 +27,17 @@ class EvaluateRequest:
     # Optional: user-supplied extra metrics to compute after alignment.
     # Each Metric will be called as metric.evaluate(alignment=..., gt=..., pred=...) (with a positional fallback).
     custom_metrics: Optional[Dict[str, Metric]] = None
+    # Sort both traces by timestamp before alignment (default). False keeps the
+    # recorded order, as the paper's original scorer did.
+    sort_by_time: bool = True
+    # Count an aligned pair as matched only if the channels are equal (discrete and timing).
+    require_channel_match: bool = False
+    # A reference with no discrete events scores 0 and is never exact (original scorer).
+    empty_reference_fails: bool = False
+    # "always" (default): the continuous weights are used whenever continuous_channels is
+    # configured. "if_present": only if a continuous channel has an event in gt or pred;
+    # otherwise the no-continuous weights are used (original scorer).
+    continuous_weighting: str = "always"
 
 @dataclass
 class EvaluateResult:
@@ -50,8 +61,12 @@ class Evaluator:
             gt = gt.canonicalize(req.alias_map)
             pred = pred.canonicalize(req.alias_map)
 
-        gt_sorted = gt.sort_by_time(in_place=False)
-        pred_sorted = pred.sort_by_time(in_place=False)
+        if req.sort_by_time:
+            gt_sorted = gt.sort_by_time(in_place=False)
+            pred_sorted = pred.sort_by_time(in_place=False)
+        else:
+            gt_sorted = Trace(list(gt.events))
+            pred_sorted = Trace(list(pred.events))
 
         # Build combined ignore set BEFORE alignment - includes both regular ignores and continuous channels
         ignore = set(req.ignore_channels or set())
@@ -70,11 +85,16 @@ class Evaluator:
         discrete_metric = DiscreteMatchMetric(
             comparator=req.comparator,
             ignore_channels=ignore,  # Pass for defensive programming, but already filtered
-            comparator_map=req.comparators_by_channel
+            comparator_map=req.comparators_by_channel,
+            require_channel_match=req.require_channel_match,
+            empty_reference_fails=req.empty_reference_fails,
         ).evaluate(alignment)
 
         tm = req.timing_metric or TimingMetric()
-        timing_metric = tm.evaluate(alignment, comparator=req.comparator, comparator_map=req.comparators_by_channel)
+        if req.require_channel_match:
+            timing_metric = tm.evaluate(alignment, comparator=req.comparator, comparator_map=req.comparators_by_channel, require_channel_match=True)
+        else:
+            timing_metric = tm.evaluate(alignment, comparator=req.comparator, comparator_map=req.comparators_by_channel)
 
         metrics: Dict[str, MetricResult] = {
             "discrete": discrete_metric,
@@ -101,25 +121,43 @@ class Evaluator:
                 metrics[name] = mres
 
         aggregator = self.aggregator
-        aggregator.use_continuous = req.use_continuous or bool(req.continuous_channels)
+        if req.continuous_weighting == "if_present":
+            cont = set(req.continuous_channels or {})
+            aggregator.use_continuous = any(
+                e.channel in cont for e in list(gt_sorted.events) + list(pred_sorted.events)
+            )
+        elif req.continuous_weighting == "always":
+            aggregator.use_continuous = req.use_continuous or bool(req.continuous_channels)
+        else:
+            raise ValueError(f"unknown continuous_weighting: {req.continuous_weighting!r}")
         full_score = aggregator.aggregate(metrics)
         accuracy = self.decision.decide(metrics)
 
         return EvaluateResult(metrics=metrics, full_score=full_score, accuracy=accuracy, alignment=alignment)
 
-    def evaluate_best_of(self, gt_list: List[Trace], pred: Trace, **kwargs) -> tuple[EvaluateResult, int]:
+    def evaluate_best_of(self, gt_list: List[Trace], pred: Trace, template: Optional[EvaluateRequest] = None, **kwargs) -> tuple[EvaluateResult, int]:
         """
         Evaluate multiple ground-truth traces against a single predicted trace,
-        returning the best EvaluateResult and its index.
+        returning the best EvaluateResult and its index. The first reference with
+        the strictly highest full_score wins (ties keep the earlier reference).
 
-        kwargs may include: key_fn, aligner, comparator, comparators_by_channel,
-        ignore_channels, alias_map, use_continuous.
+        template: an EvaluateRequest (for example from build_from_config) whose
+        settings are used for every reference; only gt and pred are replaced.
+        If template is None, kwargs may include: key_fn, aligner, comparator,
+        comparators_by_channel, ignore_channels, alias_map, use_continuous.
         """
         best_result: Optional[EvaluateResult] = None
         best_idx: int = -1
         best_score: float = -1.0
 
         for i, gt in enumerate(gt_list):
+            if template is not None:
+                res = self.evaluate(replace(template, gt=gt, pred=pred))
+                if best_result is None or res.full_score > best_score:
+                    best_result = res
+                    best_idx = i
+                    best_score = res.full_score
+                continue
             req = EvaluateRequest(
                 gt=gt,
                 pred=pred,

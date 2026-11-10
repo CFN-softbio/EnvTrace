@@ -10,6 +10,7 @@ from envtrace.core.comparators import (
     ValueComparator,
     ExactEqualityComparator,
     NumericToleranceComparator,
+    AbsoluteToleranceComparator,
     AlwaysTrueComparator,
 )
 from envtrace.core.metrics import TimingMetric, Metric, MetricResult
@@ -38,6 +39,8 @@ def _make_comparator(spec: Dict[str, Any] | None) -> ValueComparator:
     if t in ("numeric_tolerance", "tolerance", "tol"):
         tol = float(spec.get("tol", 1e-3))
         return NumericToleranceComparator(tol=tol)
+    if t in ("absolute_tolerance", "abs_tolerance", "abs_tol"):
+        return AbsoluteToleranceComparator(tol=float(spec.get("tol", 1e-3)))
     if t in ("always_true", "any", "ignore"):
         return AlwaysTrueComparator()
     # default
@@ -56,6 +59,7 @@ def _make_timing_metric(spec: Dict[str, Any] | None) -> TimingMetric:
         slope_hi=float(spec.get("slope_hi", 1.2)),
         dur_tol=float(spec.get("dur_tol", 0.25)),
         mape_tol=float(spec.get("mape_tol", 1.0)),
+        regression=str(spec.get("regression", "polyfit")),
     )
 
 def _make_aggregator(spec: Dict[str, Any] | None) -> WeightedAggregator:
@@ -66,7 +70,15 @@ def _make_aggregator(spec: Dict[str, Any] | None) -> WeightedAggregator:
         # ensure float conversion
         w = {str(k): float(v) for k, v in weights.items()}
         return WeightedAggregator(weights=w)
-    return WeightedAggregator()
+    # Separate weight sets for traces without and with continuous channels.
+    agg = WeightedAggregator()
+    w_no = spec.get("weights_without_continuous")
+    w_with = spec.get("weights_with_continuous")
+    if isinstance(w_no, dict):
+        agg.weights_no_cont = {str(k): float(v) for k, v in w_no.items()}
+    if isinstance(w_with, dict):
+        agg.weights_with_cont = {str(k): float(v) for k, v in w_with.items()}
+    return agg
 
 def _make_decision(spec: Dict[str, Any] | None) -> BinaryDecision:
     if not spec:
@@ -120,5 +132,9 @@ def build_from_config(gt: Trace, pred: Trace, cfg: Dict[str, Any]) -> Tuple[Eval
         continuous_channels=continuous_channels,
         include_structure=include_structure,
         timing_metric=timing_metric,
+        sort_by_time=bool(cfg.get("sort_by_time", True)),
+        require_channel_match=bool(cfg.get("require_channel_match", False)),
+        empty_reference_fails=bool(cfg.get("empty_reference_fails", False)),
+        continuous_weighting=str(cfg.get("continuous_weighting", "always")),
     )
     return evaluator, req

@@ -4,6 +4,7 @@ from .comparators import (
     ValueComparator,
     ExactEqualityComparator,
     NumericToleranceComparator,
+    AbsoluteToleranceComparator,
     AlwaysTrueComparator,
     get_comparator_for_channel,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "ValueComparator",
     "ExactEqualityComparator",
     "NumericToleranceComparator",
+    "AbsoluteToleranceComparator",
     "AlwaysTrueComparator",
     "get_comparator_for_channel",
     "MetricResult",

@@ -25,10 +25,23 @@ class DiscreteMatchMetric:
     def __init__(self,
                  comparator: ValueComparator | None = None,
                  ignore_channels: Optional[set[str]] = None,
-                 comparator_map: Optional[Dict[str, ValueComparator]] = None) -> None:
+                 comparator_map: Optional[Dict[str, ValueComparator]] = None,
+                 require_channel_match: bool = False,
+                 empty_reference_fails: bool = False) -> None:
+        """
+        require_channel_match: count an aligned pair as a match only if both events
+            have the same channel (in addition to the value comparison). The default
+            (False) keeps the earlier behaviour, where a pair from a 'replace' block
+            with different channels but equal values counts as a match.
+        empty_reference_fails: if the reference has no (non-ignored) events, return
+            score 0.0 and exact False, as the paper's original scorer did. The default
+            (False) scores two empty traces as 1.0 and exact.
+        """
         self.comparator = comparator or NumericToleranceComparator()
         self.ignore_channels = ignore_channels or set()
         self.comparator_map = comparator_map or {}
+        self.require_channel_match = require_channel_match
+        self.empty_reference_fails = empty_reference_fails
 
     def evaluate(self, alignment: List[Pair]) -> MetricResult:
         value_matches = 0
@@ -51,12 +64,14 @@ class DiscreteMatchMetric:
                 gt_count += 1
             if p is not None:
                 pred_count += 1
-            if g is not None and p is not None and get_comparator_for_channel(self.comparator, self.comparator_map, g.channel).compare(g.value, p.value, g.channel):
+            if g is not None and p is not None and (not self.require_channel_match or g.channel == p.channel) and get_comparator_for_channel(self.comparator, self.comparator_map, g.channel).compare(g.value, p.value, g.channel):
                 value_matches += 1
 
         rate = (value_matches / total_pairs) if total_pairs else 1.0
         mismatch_rate = (total_pairs - value_matches) / total_pairs if total_pairs else 0.0
         exact = (value_matches == gt_count) and (value_matches == pred_count)
+        if self.empty_reference_fails and gt_count == 0:
+            rate, mismatch_rate, exact = 0.0, 1.0, False
 
         return MetricResult(
             name="discrete",
@@ -80,7 +95,17 @@ class TimingMetric:
                  slope_lo: float = 0.8,
                  slope_hi: float = 1.2,
                  dur_tol: float = 0.25,
-                 mape_tol: float = 1.0) -> None:
+                 mape_tol: float = 1.0,
+                 regression: str = "polyfit") -> None:
+        """
+        regression: how slope and R^2 are computed.
+            "polyfit" (default): numpy.polyfit, R^2 = 1 - SS_res/SS_tot (1.0 if SS_tot == 0).
+            "pearson": the formulas of scipy.stats.linregress (R^2 = r^2 with Pearson r,
+                slope = cov(x, y)/var(x)), as used by the paper's original scorer.
+        """
+        if regression not in ("polyfit", "pearson"):
+            raise ValueError(f"unknown regression method: {regression!r}")
+        self.regression = regression
         self.r2_thresh = r2_thresh
         self.slope_lo = slope_lo
         self.slope_hi = slope_hi
@@ -100,12 +125,38 @@ class TimingMetric:
         r2 = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 1.0
         return float(slope), float(intercept), float(r2)
 
-    def evaluate(self, aligned_pairs: List[Pair], comparator: ValueComparator, comparator_map: Optional[Dict[str, ValueComparator]] = None) -> MetricResult:
+    @staticmethod
+    def _linregress_pearson(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float]:
+        # Same formulas as scipy.stats.linregress (SciPy 1.18), numpy only.
+        # Degenerate input (constant x or y) follows SciPy: r is NaN if cov(x, y) == 0,
+        # else 0; slope is cov/var(x) (NaN for constant x).
+        x = x.astype(float)
+        y = y.astype(float)
+        n = x.size
+        xmean = np.mean(x)
+        ymean = np.mean(y)
+        x_ = x - xmean
+        y_ = y - ymean
+        ssxm = np.dot(x_, x_) / n
+        ssym = np.dot(y_, y_) / n
+        ssxym = np.dot(x_, y_) / n
+        with np.errstate(invalid="ignore", divide="ignore"):
+            if ssxm == 0.0 or ssym == 0.0:
+                r = float("nan") if ssxym == 0 else 0.0
+            else:
+                r = float(np.clip(ssxym / np.sqrt(ssxm * ssym), -1.0, 1.0))
+            slope = float(ssxym / ssxm) if ssxm != 0.0 else float("nan")
+        intercept = float(ymean - slope * xmean)
+        return slope, intercept, r ** 2
+
+    def evaluate(self, aligned_pairs: List[Pair], comparator: ValueComparator, comparator_map: Optional[Dict[str, ValueComparator]] = None, require_channel_match: bool = False) -> MetricResult:
         matched_gt_ts: List[float] = []
         matched_pr_ts: List[float] = []
 
         for g, p in aligned_pairs:
             if g is None or p is None:
+                continue
+            if require_channel_match and g.channel != p.channel:
                 continue
             if not get_comparator_for_channel(comparator, comparator_map, g.channel).compare(g.value, p.value, g.channel):
                 continue
@@ -126,7 +177,10 @@ class TimingMetric:
         gt = np.asarray(matched_gt_ts) - matched_gt_ts[0]
         pr = np.asarray(matched_pr_ts) - matched_pr_ts[0]
 
-        slope, intercept, r2 = self._linregress_np(gt, pr)
+        if self.regression == "pearson":
+            slope, intercept, r2 = self._linregress_pearson(gt, pr)
+        else:
+            slope, intercept, r2 = self._linregress_np(gt, pr)
 
         r2_score = r2
         slope_score = 1.0 - min(abs(slope - 1.0), 1.0)

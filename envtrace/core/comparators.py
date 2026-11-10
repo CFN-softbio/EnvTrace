@@ -25,6 +25,22 @@ class NumericToleranceComparator:
             return math.isclose(float(a), float(b), rel_tol=self.tol, abs_tol=0.0)
         return str(a) == str(b)
 
+class AbsoluteToleranceComparator:
+    """
+    Absolute numeric tolerance with float coercion, as in the paper's original scorer:
+    values match if abs(float(a) - float(b)) < tol (strict). Values that cannot be
+    converted to float (for example None or non-numeric strings) fall back to
+    string equality. Numeric strings such as "1" are compared as numbers.
+    """
+    def __init__(self, tol: float = 1e-3) -> None:
+        self.tol = tol
+
+    def compare(self, a: Any, b: Any, channel: str) -> bool:
+        try:
+            return abs(float(a) - float(b)) < self.tol
+        except (ValueError, TypeError):
+            return str(a) == str(b)
+
 class AlwaysTrueComparator:
     def compare(self, a: Any, b: Any, channel: str) -> bool:
         return True

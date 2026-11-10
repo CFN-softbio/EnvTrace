@@ -128,6 +128,13 @@ def format_alignment_table(
     return "\n".join(out_lines)
 
 
+def _uses_continuous(metrics: Dict[str, MetricResult], aggregator: WeightedAggregator) -> bool:
+    # The evaluator sets aggregator.use_continuous for each evaluation; fall back to
+    # the presence of a continuous metric when it is unset.
+    use = getattr(aggregator, "use_continuous", None)
+    return bool(use) if use is not None else ("continuous" in metrics)
+
+
 def _compute_contributions(
     metrics: Dict[str, MetricResult], aggregator: WeightedAggregator
 ) -> Optional[Dict[str, float]]:
@@ -138,7 +145,7 @@ def _compute_contributions(
     if getattr(aggregator, "weights", None):
         weights = aggregator.weights
     else:
-        weights = aggregator.weights_with_cont if "continuous" in metrics else aggregator.weights_no_cont
+        weights = aggregator.weights_with_cont if _uses_continuous(metrics, aggregator) else aggregator.weights_no_cont
     contribs: Dict[str, float] = {}
     total = 0.0
     for name, w in weights.items():
@@ -276,7 +283,7 @@ def build_json_report(
                 "weights": evaluator.aggregator.weights
                 or (
                     evaluator.aggregator.weights_with_cont
-                    if "continuous" in result.metrics
+                    if _uses_continuous(result.metrics, evaluator.aggregator)
                     else evaluator.aggregator.weights_no_cont
                 ),
                 "contributions": contribs,
