@@ -1,7 +1,8 @@
 """Tests for the fix-paper-defaults change: new defaults, the options that restore the
-earlier defaults, the degenerate-timing guard, evaluate_best_of(**kwargs), and the opt-in
-harness rules (continuous facet honours ignore list, no-discrete-reference rule, exact
-code match)."""
+earlier defaults, the degenerate-timing guard, evaluate_best_of(**kwargs), the two
+corrections of the paper's scorer (the continuous facet honours the ignore list; one
+matched pair leaves timing undefined) and the opt-in harness rules (no-discrete-reference
+rule, exact code match)."""
 
 import json
 import math
