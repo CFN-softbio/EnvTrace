@@ -10,6 +10,32 @@ differed from that scorer in eight ways; each one is fixed below and covered by 
 the earlier defaults change.** Every earlier default is still available through an explicit
 option, listed per item.
 
+The same audit found two rules of the original scorer that are defects for the method's
+purpose; the defaults correct them (next section), and `paper_config.json` keeps the original
+rules so that it still reproduces the paper.
+
+### Changed defaults: corrections of the paper's scorer
+
+- **One matched pair: timing undefined.** With exactly one aligned pair that matches, no pacing
+  can be measured, so the timing facet is undefined: score `NaN`, `details["undefined"] = True`,
+  `binary_pass` True (the check does not apply, so the strict decision is unchanged). The
+  `WeightedAggregator` leaves an undefined facet out and scales the other weights up
+  proportionally: the full score is the PV match rate without a continuous channel, and
+  0.75 x PV + 0.25 x continuous with one (weights 0.6/0.2/0.2). 0 matched pairs (timing 0) and
+  2 or more are unchanged. The original scorer gives 1.0 and pass, which adds 0.2 to a row that
+  has one correct event among several (PV match rate below 1). The text report prints
+  `score=undefined`; the JSON report writes `null` for the score, and its `aggregation.weights`
+  are the weights applied. A custom `formula` receives the `NaN`. If every weighted facet is
+  undefined (custom weights on timing only), the full score is `NaN`. Old behaviour:
+  `TimingMetric(single_matched_pair="full_credit")`, config `timing.single_matched_pair:
+  "full_credit"`.
+- **Ignored continuous channels are left out of the continuous facet.**
+  `ignore_applies_to_continuous=True` is now the default (it was opt-in): a continuous channel
+  in `ignore_channels` is also left out of the continuous facet, the weight switch and the
+  strict decision. The original scorer read the temperature facet from the unfiltered traces,
+  so a command whose ignore list contains the temperature readback could still lose 0.2. Old
+  behaviour: `ignore_applies_to_continuous=False` (also in a config).
+
 ### Changed defaults
 
 - **Channel check on matched pairs.** An aligned pair matches only if both events have the
@@ -59,9 +85,6 @@ option, listed per item.
 
 ### Added (opt-in, default off)
 
-- `ignore_applies_to_continuous=True`: a continuous channel in `ignore_channels` is also left out
-  of the continuous facet, the weight switch and the decision. The paper's scorer reads the
-  continuous facet from the unfiltered traces, so the default keeps that.
 - `no_discrete_reference_scores_zero=True`: the paper harness's rule that a command whose
   references have no discrete event scores 0 on every facet and fails; `evaluate` applies it to
   its reference, `evaluate_best_of` only when no reference has a discrete event (returning index
@@ -72,7 +95,9 @@ option, listed per item.
   execution). It agrees with the stored `exact_match` column on all 12,688 model and scientist
   rows of the paper's main batch.
 - `envtrace/examples/paper/check_against_paper.py --defaults` scores the main batch with no
-  configuration file.
+  configuration file; `--rows-out FILE` writes every differing (row, field) as a CSV.
+- `WeightedAggregator.base_weights(metrics)` and `effective_weights(metrics)`: the weight set
+  that applies, before and after leaving out undefined facets.
 
 ### Other API changes a user may notice
 
@@ -85,12 +110,23 @@ option, listed per item.
 
 ### Reproduction (main batch, `saved_named_runs/new_prompt_new_dataset_12_8`)
 
-- `paper_config.json`: unchanged, all 13,096 rows equal the stored scores (max deviation 7.8e-16,
-  no pass flag differs; `check_against_paper_summary.txt`).
+- `paper_config.json` (with `timing.single_matched_pair: "full_credit"` and
+  `ignore_applies_to_continuous: false`): all 13,096 rows equal the stored scores (max deviation
+  7.8e-16, no pass flag differs; `check_against_paper_summary.txt`).
 - Defaults, no configuration file (only the temperature channel declared continuous and the
-  per-command ignore lists): 5,965 of the 6,016 scored model rows equal the paper's scores; 51
-  differ (all lower, 15 strict passes lost), and every one is a `sam.setOrigin` pair whose
-  argument text differs, which the paper's scorer matches by name only. Adding the name-only
-  comparators for the three function-call channels leaves 0 differing rows. The 408 debug rows
-  match; 2 of the 40 scientist rows differ for the same reason
-  (`check_against_paper_defaults_summary.txt`).
+  per-command ignore lists): 5,644 of the 6,016 scored model rows have the paper's full score;
+  372 differ (`check_against_paper_defaults_summary.txt`):
+  - 51 `sam.setOrigin` pairs whose argument text differs, which the paper's scorer matches by
+    name only (all lower, 15 strict passes lost against the original scorer, the only strict
+    differences); 2 of them are also lowered by the one-pair correction;
+  - 302 rows with one matched pair and a PV match rate below 1 (lower by 0.10 to 0.19), and 19
+    rows with the temperature readback on the ignore list and a temperature event (higher by
+    0.13 to 0.20, no strict flag changes). On the corrected trace set of the paper's analysis
+    these are exactly the 285 and 19 rows of corrections V2 and V3 of the pre-registered
+    robustness check, with the same scores (1e-9); the other 17 rows have one matched pair only
+    in the stored, uncorrected traces.
+  The timing score is undefined (`NaN`) on the 648 rows with one matched pair. Adding the
+  name-only comparators for the three function-call channels leaves only the 321 corrected rows.
+  Debug (GT against GT, 408 rows): 9 one-pair rows lower and 1 row higher (run_2 row 98, "Heat
+  up the thin film sample to 102.7", now passes: it failed only the temperature check, on an
+  ignored readback). 2 of the 40 scientist rows differ (the `sam.setOrigin` reason).

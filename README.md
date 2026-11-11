@@ -213,6 +213,8 @@ EnvTrace computes multiple metrics to assess different aspects of code behavior:
   - Slope (overall rate: 1.0 = perfect match)
   - Duration ratio
   - MAPE (Mean Absolute Percentage Error of intervals)
+- **Matched pairs**: 0 gives 0 and fail; exactly 1 gives an undefined score (`NaN`, the check does
+  not apply), `TimingMetric(single_matched_pair="full_credit")` gives 1.0 instead
 - **Key for**: Real-time systems, synchronized operations
 
 #### Continuous Profile Metric
@@ -238,9 +240,18 @@ A continuous channel has an event in gt or pred:  0.6 * discrete + 0.2 * timing 
 (`continuous_weighting="if_present"`, the default; `"always"` uses the second line whenever
 `continuous_channels` is configured, the behaviour before the change in CHANGELOG.md.)
 
+With exactly one matched pair there is no pacing to measure, so the timing facet is undefined
+(score `NaN`, `details["undefined"] = True`, written as `null` in the JSON report) and left out;
+the other weights are scaled up proportionally: `discrete` alone without a continuous channel,
+`0.75 * discrete + 0.25 * continuous` with one. 0 matched pairs give timing 0; 2 or more are
+scored as above. A continuous channel listed in `ignore_channels` is left out of the continuous
+facet too, so it does not switch the weights. Both are corrections of the paper's original scorer
+(see "Defaults and the paper").
+
 **Binary Accuracy** (strict pass/fail):
 - Requires exact discrete match (equal counts, no insertions or deletions, every pair matches)
-- Requires timing thresholds met (R² ≥ 0.9, slope ∈ [0.8, 1.2], duration within 25%, MAPE ≤ 100%)
+- Requires timing thresholds met (R² ≥ 0.9, slope ∈ [0.8, 1.2], duration within 25%, MAPE ≤ 100%);
+  an undefined timing facet (one matched pair) does not fail it
 - Requires the continuous thresholds (MAE ≤ 5, final difference ≤ 5 by default) whenever a
   continuous channel has an event in either trace (`BinaryDecision(require_continuous=True)`,
   the default)
@@ -254,15 +265,18 @@ def custom_formula(metrics):
 
 evaluator = Evaluator(aggregator=WeightedAggregator(formula=custom_formula))
 ```
+A custom formula receives an undefined timing facet as `NaN`; handle it (for example with
+`math.isnan`), or the full score is `NaN`.
 
 ### 6. Defaults and the paper
 
 The defaults implement the method of the EnvTrace paper ("Semantic Evaluation of Language
 Models for Physical System Control"), whose numbers were produced by the original scorer
-[`backend/tests/test_op_cog.py`](https://github.com/CFN-softbio/VISION/blob/main/backend/tests/test_op_cog.py).
-Every earlier default is still available through an explicit option:
+[`backend/tests/test_op_cog.py`](https://github.com/CFN-softbio/VISION/blob/main/backend/tests/test_op_cog.py),
+with two corrections of that scorer (the last two rows of the table). Every earlier default is
+still available through an explicit option:
 
-| Behaviour | Default (paper) | Earlier default, explicit option |
+| Behaviour | Default | Earlier default, explicit option |
 |---|---|---|
 | Pair match | same channel and value | `require_channel_match=False` |
 | Value tolerance | `AbsoluteToleranceComparator(1e-3)`, `abs(a - b) < 1e-3` | `comparator=NumericToleranceComparator(1e-3)` (relative) |
@@ -273,10 +287,18 @@ Every earlier default is still available through an explicit option:
 | `evaluate_best_of(**kwargs)` | every `EvaluateRequest` field | (the earlier version dropped most fields) |
 | Timing, all matched reference timestamps equal | 1.0 and pass if the predicted ones are equal too, else 0.0 and fail | (polyfit raised `LinAlgError`) |
 | Timing, all matched predicted timestamps equal | R² = 0 | (polyfit reported R² = 1) |
+| Timing, exactly one matched pair (correction) | undefined (`NaN`), left out of the full score with the other weights renormalised; does not fail the strict decision | `TimingMetric(single_matched_pair="full_credit")` (1.0 and pass, the paper's scorer) |
+| Continuous channel on the ignore list (correction) | left out of the continuous facet, the weight switch and the decision | `ignore_applies_to_continuous=False` (still scored, the paper's scorer) |
+
+The two corrections: with one matched pair the paper's scorer gives full timing credit (+0.2)
+to a trace that has nothing to time, also when the PV match rate is below 1; and it scores the
+temperature facet from the unfiltered traces even when the command's ignore list contains the
+temperature readback, so a correct program can lose 0.2.
 
 In a config file the same options are top-level keys (`require_channel_match`, `sort_by_time`,
 `empty_reference_fails`, `continuous_weighting`, `ignore_applies_to_continuous`,
-`no_discrete_reference_scores_zero`) and `decision.require_continuous`; comparator types are
+`no_discrete_reference_scores_zero`), `timing.single_matched_pair` (`"undefined"` or
+`"full_credit"`) and `decision.require_continuous`; comparator types are
 `absolute_tolerance` (the default), `numeric_tolerance` (alias `relative_tolerance`), `exact`
 and `always_true`, and an unknown type raises `ValueError`.
 
@@ -296,17 +318,18 @@ Two rules of the paper's harness are not trace scoring and are opt-in:
   after removing `#` comments and surrounding whitespace) and `exact_code_match_result()` (every
   facet 1.0, passes). The evaluator works on traces only, so call these before evaluating.
 
-One further option, off by default because the paper's scorer does not do it:
-`ignore_applies_to_continuous=True` also removes an ignored continuous channel from the
-continuous facet (and so from the weight switch and the decision).
-
 `envtrace/examples/paper/paper_config.json` reproduces every stored score of the paper's main
-batch (13,096 rows, `check_against_paper.py`). The defaults with no config file, given only the
-continuous temperature channel and the per-command ignore lists
-(`check_against_paper.py --defaults`), reproduce 5,965 of the 6,016 scored model rows; the other
-51 are `sam.setOrigin` pairs whose argument text differs, which the paper's scorer matches by name
-only (see above). R² and slope come from `numpy.polyfit` by default; `timing.regression = "pearson"`
-gives the `scipy.stats.linregress` formulas of the paper's scorer (the two agree to rounding).
+batch (13,096 rows, `check_against_paper.py`); it sets `timing.single_matched_pair = "full_credit"`
+and `ignore_applies_to_continuous = false` to keep the paper's rules. The defaults with no config
+file, given only the continuous temperature channel and the per-command ignore lists
+(`check_against_paper.py --defaults`), give the paper's full score on 5,644 of the 6,016 scored
+model rows. The other 372: 51 `sam.setOrigin` pairs whose argument text differs, which the
+paper's scorer matches by name only (see above; the only strict-decision differences); 321 rows
+changed by the two corrections (302 with one matched pair and a PV match rate below 1, lower by
+0.10 to 0.19; 19 with the temperature readback ignored, higher by 0.13 to 0.20). The timing score
+is undefined on the 648 rows with one matched pair. R² and slope come from `numpy.polyfit` by
+default; `timing.regression = "pearson"` gives the `scipy.stats.linregress` formulas of the
+paper's scorer (the two agree to rounding).
 
 ---
 
@@ -407,8 +430,9 @@ continuous_config = {
 request = EvaluateRequest(
     gt=gt,
     pred=pred,
-    continuous_channels=continuous_config,
-    ignore_channels={"stage:temp"},  # Exclude from discrete matching
+    continuous_channels=continuous_config,  # also excluded from discrete matching
+    # Do not list stage:temp in ignore_channels: an ignored continuous channel is left out
+    # of the continuous facet too (ignore_applies_to_continuous=True, the default).
 )
 
 result = evaluator.evaluate(request)
@@ -779,7 +803,7 @@ print("Structure score:", res.metrics["structure"].score)
 ```
 
 Notes:
-- Temperature channel is excluded from discrete alignment via `ignore_channels` and handled by the `continuous_channels` config.
+- Temperature channel is excluded from discrete alignment because it is listed in `continuous_channels`, which handles it (listing it in `ignore_channels` as well would drop it from the continuous facet).
 - AcquireTime is excluded from discrete matching because it’s a parameter-setting PV rather than a discrete action.
 - Per-channel comparators give fine-grained control over numeric tolerated matching versus exact toggles.
 
