@@ -29,11 +29,16 @@ scorer copy analysis/A4_leak/orig_scoring.py (and SciPy for it).
 EvaluateRequest(continuous_channels={TEMP: {}}, ignore_channels=<the command's ignore
 list>). Declaring the temperature channel continuous and passing the per-command ignore
 list describe the environment and the dataset, not the scoring policy. The differences
-that remain come from the two settings of paper_config.json that are not defaults: the
+that remain come from the settings of paper_config.json that are not defaults: the
 values of the function-call events wsam, sam.pos and sam.setOrigin are compared (the
-paper's scorer matches them by name only), and R^2 and slope come from numpy.polyfit
-instead of the scipy.stats.linregress formulas (equal up to rounding). Summary file:
-check_against_paper_defaults_summary.txt.
+paper's scorer matches them by name only); one matched pair leaves the timing facet
+undefined (timing_score NaN, counted separately; the paper's scorer gives 1.0,
+timing.single_matched_pair = "full_credit"); an ignored temperature channel is left out
+of the temperature facet (the paper's scorer reads it, ignore_applies_to_continuous =
+false); and R^2 and slope come from numpy.polyfit instead of the scipy.stats.linregress
+formulas (equal up to rounding). Summary file: check_against_paper_defaults_summary.txt.
+
+--rows-out FILE writes every differing (row, field) of checks A, A' and B as a CSV.
 
 Usage, from the paper working folder (the parent of EnvTrace/):
     PYTHONPATH=EnvTrace python EnvTrace/envtrace/examples/paper/check_against_paper.py [--defaults]
@@ -166,30 +171,42 @@ class Tally:
         self.maxdev = defaultdict(float)
         self.bad = defaultdict(int)
         self.flags = defaultdict(int)
+        self.undefined = defaultdict(int)   # package NaN (undefined facet), paper a number
         self.examples = []
+        self.diffs = []                     # every differing (where, field, package, paper)
+
+    def _diff(self, where, f, a, b):
+        self.bad[f] += 1
+        self.diffs.append((where, f, a, b))
+        if len(self.examples) < 10:
+            self.examples.append((where, f, a, b))
 
     def add(self, mine, ref, where, fields=FIELDS, flag_keys=("full_match",)):
         self.n += 1
         for f in fields:
-            d = dev(mine[f], ref[f])
-            self.maxdev[f] = max(self.maxdev[f], d)
             if not same(mine[f], ref[f]):
-                self.bad[f] += 1
-                if len(self.examples) < 10:
-                    self.examples.append((where, f, mine[f], ref[f]))
+                self._diff(where, f, mine[f], ref[f])
+            if math.isnan(float(mine[f])) and not math.isnan(float(ref[f])):
+                self.undefined[f] += 1
+            else:
+                self.maxdev[f] = max(self.maxdev[f], dev(mine[f], ref[f]))
         for k in flag_keys:
             if k in ref and ref[k] is not None:
                 self.flags[k] += 1
                 if bool(mine[k]) != bool(ref[k]):
-                    self.bad[k] += 1
-                    if len(self.examples) < 10:
-                        self.examples.append((where, k, mine[k], ref[k]))
+                    self._diff(where, k, mine[k], ref[k])
 
     def lines(self, label):
         out = [f"{label}: {self.n} rows"]
         out.append("  max |deviation|: " + ", ".join(f"{f}={self.maxdev[f]:.3g}" for f in FIELDS
                                                       if f in self.maxdev))
+        if self.undefined:
+            out.append("  undefined in the package (NaN), a number in the paper (not in max |deviation|): "
+                       + ", ".join(f"{k}={v}" for k, v in sorted(self.undefined.items())))
         out.append("  pass flags compared: " + (", ".join(f"{k}={v}" for k, v in self.flags.items()) or "0"))
+        rows = {d[0] for d in self.diffs}
+        if rows:
+            out.append(f"  distinct rows differing in any field or flag: {len(rows)}")
         out.append("  rows differing (> 1e-9, or flag differs): "
                    + (", ".join(f"{k}={v}" for k, v in sorted(self.bad.items())) or "none"))
         for e in self.examples:
@@ -225,6 +242,8 @@ def main():
     ap.add_argument("--out", default=None,
                     help="summary file (default: check_against_paper_summary.txt here for the "
                          "main batch, none for other batches)")
+    ap.add_argument("--rows-out", default=None,
+                    help="CSV of every differing (row, field) of checks A, A' and B")
     args = ap.parse_args()
     root = Path(args.root)
     paper = Paper(None if args.defaults else args.config)
@@ -360,6 +379,16 @@ def main():
     out = args.out or (str(HERE / name) if args.batch == MAIN else None)
     if out:
         Path(out).write_text(text + "\n", encoding="utf-8")
+    if args.rows_out:
+        recs = []
+        tallies = ([("A", g, t) for g, t in tA.items()] + [("A'", g, t) for g, t in tA_orig.items()]
+                   + [("B", "models", tB)] + [("C " + k, "models", t) for k, t in tC.items()])
+        for check, g, t in tallies:
+            for (model, ts, run, row), f, mine, ref in t.diffs:
+                recs.append(dict(check=check, group=g, model=model, timestamp=ts, run=run, row=row,
+                                 field=f, package=mine, paper=ref))
+        pd.DataFrame(recs, columns=["check", "group", "model", "timestamp", "run", "row", "field",
+                                    "package", "paper"]).to_csv(args.rows_out, index=False)
 
 
 if __name__ == "__main__":
