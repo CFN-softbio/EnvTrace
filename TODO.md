@@ -157,6 +157,7 @@ This document tracks implementation steps toward a pip-installable, well-documen
 - v0.2.0:
   - [x] Evaluate continuous channels with config-driven scoring
   - [x] Reproduce paper’s scoring policies via config (`envtrace/examples/paper/`: `paper_config.json`, checked against every stored main-batch score by `check_against_paper.py`)
+  - [x] Defaults implement the paper's method (CHANGELOG.md); without a config only the function-call events matched by name differ (`check_against_paper.py --defaults`)
 - v0.3.0:
   - [ ] Demonstrate evaluation using provided JSON traces and custom metrics (no simulator/adapters required)
 - v1.0:
