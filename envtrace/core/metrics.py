@@ -1,8 +1,9 @@
 from __future__ import annotations
+import math
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Protocol
 from envtrace.core.event import Event
-from envtrace.core.comparators import ValueComparator, NumericToleranceComparator, get_comparator_for_channel
+from envtrace.core.comparators import ValueComparator, AbsoluteToleranceComparator, get_comparator_for_channel
 import numpy as np
 
 @dataclass
@@ -25,10 +26,25 @@ class DiscreteMatchMetric:
     def __init__(self,
                  comparator: ValueComparator | None = None,
                  ignore_channels: Optional[set[str]] = None,
-                 comparator_map: Optional[Dict[str, ValueComparator]] = None) -> None:
-        self.comparator = comparator or NumericToleranceComparator()
+                 comparator_map: Optional[Dict[str, ValueComparator]] = None,
+                 require_channel_match: bool = True,
+                 empty_reference_fails: bool = True) -> None:
+        """
+        comparator: default value comparator; AbsoluteToleranceComparator(1e-3) if None.
+        require_channel_match: count an aligned pair as a match only if both events
+            have the same channel (in addition to the value comparison), as in the
+            paper ("identical PV names and values"). False restores the behaviour
+            before the fix-paper-defaults change, where a pair from a 'replace' block
+            with different channels but equal values counts as a match.
+        empty_reference_fails: if the reference has no (non-ignored) events, return
+            score 0.0 and exact False, as the paper's original scorer did. False
+            restores the earlier behaviour (two empty traces score 1.0 and exact).
+        """
+        self.comparator = comparator or AbsoluteToleranceComparator()
         self.ignore_channels = ignore_channels or set()
         self.comparator_map = comparator_map or {}
+        self.require_channel_match = require_channel_match
+        self.empty_reference_fails = empty_reference_fails
 
     def evaluate(self, alignment: List[Pair]) -> MetricResult:
         value_matches = 0
@@ -51,12 +67,14 @@ class DiscreteMatchMetric:
                 gt_count += 1
             if p is not None:
                 pred_count += 1
-            if g is not None and p is not None and get_comparator_for_channel(self.comparator, self.comparator_map, g.channel).compare(g.value, p.value, g.channel):
+            if g is not None and p is not None and (not self.require_channel_match or g.channel == p.channel) and get_comparator_for_channel(self.comparator, self.comparator_map, g.channel).compare(g.value, p.value, g.channel):
                 value_matches += 1
 
         rate = (value_matches / total_pairs) if total_pairs else 1.0
         mismatch_rate = (total_pairs - value_matches) / total_pairs if total_pairs else 0.0
         exact = (value_matches == gt_count) and (value_matches == pred_count)
+        if self.empty_reference_fails and gt_count == 0:
+            rate, mismatch_rate, exact = 0.0, 1.0, False
 
         return MetricResult(
             name="discrete",
@@ -74,13 +92,49 @@ class DiscreteMatchMetric:
             },
         )
 
+SINGLE_MATCHED_PAIR_MODES = ("undefined", "full_credit")
+
+
+def is_undefined(m: Optional["MetricResult"]) -> bool:
+    """True if a metric result has no defined score (NaN), e.g. timing with one matched pair."""
+    if m is None:
+        return False
+    try:
+        return math.isnan(float(m.score))
+    except (TypeError, ValueError):
+        return False
+
+
 class TimingMetric:
     def __init__(self,
                  r2_thresh: float = 0.90,
                  slope_lo: float = 0.8,
                  slope_hi: float = 1.2,
                  dur_tol: float = 0.25,
-                 mape_tol: float = 1.0) -> None:
+                 mape_tol: float = 1.0,
+                 regression: str = "polyfit",
+                 single_matched_pair: str = "undefined") -> None:
+        """
+        regression: how slope and R^2 are computed.
+            "polyfit" (default): numpy.polyfit, R^2 = 1 - SS_res/SS_tot (1.0 if SS_tot == 0).
+            "pearson": the formulas of scipy.stats.linregress (R^2 = r^2 with Pearson r,
+                slope = cov(x, y)/var(x)), as used by the paper's original scorer.
+        single_matched_pair: the timing facet when exactly one aligned pair matches.
+            "undefined" (default): no pacing can be measured from one event, so the
+                score is NaN (details["undefined"] is True) and binary_pass is True (the
+                check does not apply, so it does not fail the strict decision). The
+                WeightedAggregator leaves an undefined facet out and renormalises the
+                remaining weights proportionally (0.8/0.2 gives the PV match rate alone,
+                0.6/0.2/0.2 gives 0.75 x PV + 0.25 x continuous).
+            "full_credit": score 1.0 and pass, the rule of the paper's original scorer
+                and the package default before this option existed.
+        """
+        if regression not in ("polyfit", "pearson"):
+            raise ValueError(f"unknown regression method: {regression!r}")
+        if single_matched_pair not in SINGLE_MATCHED_PAIR_MODES:
+            raise ValueError(f"unknown single_matched_pair mode: {single_matched_pair!r}")
+        self.regression = regression
+        self.single_matched_pair = single_matched_pair
         self.r2_thresh = r2_thresh
         self.slope_lo = slope_lo
         self.slope_hi = slope_hi
@@ -100,12 +154,53 @@ class TimingMetric:
         r2 = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 1.0
         return float(slope), float(intercept), float(r2)
 
-    def evaluate(self, aligned_pairs: List[Pair], comparator: ValueComparator, comparator_map: Optional[Dict[str, ValueComparator]] = None) -> MetricResult:
+    @staticmethod
+    def _linregress_pearson(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float]:
+        # Same formulas as scipy.stats.linregress (SciPy 1.18), numpy only.
+        # Degenerate input (constant x or y) follows SciPy: r is NaN if cov(x, y) == 0,
+        # else 0; slope is cov/var(x) (NaN for constant x).
+        x = x.astype(float)
+        y = y.astype(float)
+        n = x.size
+        xmean = np.mean(x)
+        ymean = np.mean(y)
+        x_ = x - xmean
+        y_ = y - ymean
+        ssxm = np.dot(x_, x_) / n
+        ssym = np.dot(y_, y_) / n
+        ssxym = np.dot(x_, y_) / n
+        with np.errstate(invalid="ignore", divide="ignore"):
+            if ssxm == 0.0 or ssym == 0.0:
+                r = float("nan") if ssxym == 0 else 0.0
+            else:
+                r = float(np.clip(ssxym / np.sqrt(ssxm * ssym), -1.0, 1.0))
+            slope = float(ssxym / ssxm) if ssxm != 0.0 else float("nan")
+        intercept = float(ymean - slope * xmean)
+        return slope, intercept, r ** 2
+
+    def evaluate(self, aligned_pairs: List[Pair], comparator: ValueComparator, comparator_map: Optional[Dict[str, ValueComparator]] = None, require_channel_match: bool = True) -> MetricResult:
+        """
+        Timing of the matched pairs (aligned, same channel unless require_channel_match
+        is False, values equal under the comparator). 0 matched pairs: score 0, fail.
+        1 matched pair: no regression possible. single_matched_pair="undefined" (default):
+        score NaN, details["undefined"] True, pass (the check does not apply);
+        "full_credit": score 1.0 and pass (the paper's original scorer).
+
+        Degenerate timestamps (n >= 2), where the regression is undefined (polyfit
+        raises LinAlgError, SciPy and "pearson" return NaN):
+          * all matched reference timestamps equal and all matched predicted
+            timestamps equal: score 1.0, pass (both simultaneous);
+          * all matched reference timestamps equal, predicted ones not: score 0.0, fail;
+          * predicted ones all equal, reference ones not: R^2 is set to 0 (no pacing
+            is reproduced), and the other components follow from the formula.
+        """
         matched_gt_ts: List[float] = []
         matched_pr_ts: List[float] = []
 
         for g, p in aligned_pairs:
             if g is None or p is None:
+                continue
+            if require_channel_match and g.channel != p.channel:
                 continue
             if not get_comparator_for_channel(comparator, comparator_map, g.channel).compare(g.value, p.value, g.channel):
                 continue
@@ -121,12 +216,40 @@ class TimingMetric:
                 details={"reason": "no matching PV/value pairs for timing evaluation", "score": 0.0},
             )
         if n < 2:
-            return MetricResult(name="timing", score=1.0, binary_pass=True, details={"score": 1.0})
+            if self.single_matched_pair == "full_credit":
+                return MetricResult(name="timing", score=1.0, binary_pass=True,
+                                    details={"score": 1.0, "matched_pairs": 1})
+            return MetricResult(
+                name="timing",
+                score=float("nan"),
+                binary_pass=True,
+                details={"reason": "one matched pair: no pacing can be measured, timing undefined",
+                         "score": float("nan"), "undefined": True, "matched_pairs": 1},
+            )
 
         gt = np.asarray(matched_gt_ts) - matched_gt_ts[0]
         pr = np.asarray(matched_pr_ts) - matched_pr_ts[0]
 
-        slope, intercept, r2 = self._linregress_np(gt, pr)
+        gt_const = bool(np.all(gt == 0.0))
+        pr_const = bool(np.all(pr == 0.0))
+        if gt_const:
+            ok = pr_const
+            reason = ("degenerate timestamps: all matched events simultaneous in both traces"
+                      if ok else
+                      "degenerate reference timestamps: all matched reference events "
+                      "simultaneous, predicted ones are not")
+            return MetricResult(name="timing", score=1.0 if ok else 0.0, binary_pass=ok,
+                                details={"reason": reason, "score": 1.0 if ok else 0.0,
+                                         "degenerate": "both" if ok else "reference"})
+
+        if pr_const:
+            # Constant prediction: no pacing reproduced. polyfit would report
+            # R^2 = 1 (SS_tot = 0), Pearson r is undefined (NaN); use 0.
+            slope, r2 = 0.0, 0.0
+        elif self.regression == "pearson":
+            slope, intercept, r2 = self._linregress_pearson(gt, pr)
+        else:
+            slope, intercept, r2 = self._linregress_np(gt, pr)
 
         r2_score = r2
         slope_score = 1.0 - min(abs(slope - 1.0), 1.0)

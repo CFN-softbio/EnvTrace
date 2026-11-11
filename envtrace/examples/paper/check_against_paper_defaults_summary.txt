@@ -1,0 +1,152 @@
+check_against_paper.py: envtrace with the package defaults (no configuration file) versus the paper's scores
+batch: saved_named_runs/new_prompt_new_dataset_12_8 (all model folders except archived); tolerance 1e-09
+
+best-of: rows with more than one reference: 3390
+best-of: selected reference differs: 1
+debug (GT vs GT): scored by the package: 408
+models: envtrace.core.exact_code_match() differs from the stored exact_match: 0
+models: exact code match (harness rule, 1/1/1/1): 6632
+models: scored by the package: 6016
+scientists (bs_1, bs_2): envtrace.core.exact_code_match() differs from the stored exact_match: 0
+scientists (bs_1, bs_2): scored by the package: 40
+rows where the package returns NaN in a score: 852
+
+A. Stored values (pass flag against the stored full_match column, where present)
+  models: 12648 rows
+    max |deviation|: pv_match_rate=1, timing_score=1, temp_score=1, full_score=1
+    undefined in the package (NaN), a number in the paper (not in max |deviation|): timing_score=648
+    pass flags compared: full_match=3264
+    distinct rows differing in any field or flag: 716
+    rows differing (> 1e-9, or flag differs): full_match=6, full_score=372, pv_match_rate=51, temp_score=19, timing_score=697
+      example: (('athene-v2', '20250731_204242', 'run_0', 15), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 15), 'full_score', 0.5, 0.6000000000000001)
+      example: (('athene-v2', '20250731_204242', 'run_0', 66), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 68), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 70), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 91), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 91), 'full_score', 0.5, 0.6000000000000001)
+      example: (('athene-v2', '20250731_204242', 'run_0', 92), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 92), 'full_score', 0.5, 0.6000000000000001)
+      example: (('athene-v2', '20250731_204242', 'run_0', 93), 'timing_score', nan, 1.0)
+  scientists (bs_1, bs_2): 40 rows
+    max |deviation|: pv_match_rate=0.167, timing_score=0.0185, temp_score=1.11e-16, full_score=0.134
+    pass flags compared: 0
+    distinct rows differing in any field or flag: 2
+    rows differing (> 1e-9, or flag differs): full_score=2, pv_match_rate=2, timing_score=2
+      example: (('bs_1', '20250729_132359', 'run_0', 9), 'pv_match_rate', 0.5, 0.6666666666666666)
+      example: (('bs_1', '20250729_132359', 'run_0', 9), 'timing_score', 0.9415060216334334, 0.9467297630616389)
+      example: (('bs_1', '20250729_132359', 'run_0', 9), 'full_score', 0.5883012043266868, 0.7226792859456611)
+      example: (('bs_2', '20250729_133545', 'run_0', 9), 'pv_match_rate', 0.5, 0.6666666666666666)
+      example: (('bs_2', '20250729_133545', 'run_0', 9), 'timing_score', 0.997868917543411, 0.9793857323734935)
+      example: (('bs_2', '20250729_133545', 'run_0', 9), 'full_score', 0.5995737835086823, 0.729210479808032)
+  debug (GT vs GT): 408 rows
+    max |deviation|: pv_match_rate=0, timing_score=4.44e-16, temp_score=1, full_score=0.2
+    undefined in the package (NaN), a number in the paper (not in max |deviation|): timing_score=204
+    pass flags compared: full_match=408
+    distinct rows differing in any field or flag: 205
+    rows differing (> 1e-9, or flag differs): full_match=1, full_score=10, temp_score=1, timing_score=204
+      example: (('debug', '20250915_185437', 'run_0', 4), 'timing_score', nan, 1.0)
+      example: (('debug', '20250915_185437', 'run_0', 4), 'full_score', 0.5, 0.6000000000000001)
+      example: (('debug', '20250915_185437', 'run_0', 5), 'timing_score', nan, 1.0)
+      example: (('debug', '20250915_185437', 'run_0', 6), 'timing_score', nan, 1.0)
+      example: (('debug', '20250915_185437', 'run_0', 7), 'timing_score', nan, 1.0)
+      example: (('debug', '20250915_185437', 'run_0', 8), 'timing_score', nan, 1.0)
+      example: (('debug', '20250915_185437', 'run_0', 9), 'timing_score', nan, 1.0)
+      example: (('debug', '20250915_185437', 'run_0', 9), 'full_score', 0.5, 0.6000000000000001)
+      example: (('debug', '20250915_185437', 'run_0', 10), 'timing_score', nan, 1.0)
+      example: (('debug', '20250915_185437', 'run_0', 11), 'timing_score', nan, 1.0)
+A'. Same rows, against the original scorer (orig_scoring.py), incl. pass flag
+  models: 6016 rows
+    max |deviation|: pv_match_rate=1, timing_score=1, temp_score=1, full_score=1
+    undefined in the package (NaN), a number in the paper (not in max |deviation|): timing_score=648
+    pass flags compared: full_match=6016
+    distinct rows differing in any field or flag: 716
+    rows differing (> 1e-9, or flag differs): full_match=15, full_score=372, pv_match_rate=51, temp_score=19, timing_score=697
+      example: (('athene-v2', '20250731_204242', 'run_0', 15), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 15), 'full_score', 0.5, 0.6000000000000001)
+      example: (('athene-v2', '20250731_204242', 'run_0', 66), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 68), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 70), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 91), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 91), 'full_score', 0.5, 0.6000000000000001)
+      example: (('athene-v2', '20250731_204242', 'run_0', 92), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 92), 'full_score', 0.5, 0.6000000000000001)
+      example: (('athene-v2', '20250731_204242', 'run_0', 93), 'timing_score', nan, 1.0)
+  scientists (bs_1, bs_2): 40 rows
+    max |deviation|: pv_match_rate=0.167, timing_score=0.0185, temp_score=0, full_score=0.134
+    pass flags compared: full_match=40
+    distinct rows differing in any field or flag: 2
+    rows differing (> 1e-9, or flag differs): full_score=2, pv_match_rate=2, timing_score=2
+      example: (('bs_1', '20250729_132359', 'run_0', 9), 'pv_match_rate', 0.5, 0.6666666666666666)
+      example: (('bs_1', '20250729_132359', 'run_0', 9), 'timing_score', 0.9415060216334334, 0.9467297630616389)
+      example: (('bs_1', '20250729_132359', 'run_0', 9), 'full_score', 0.5883012043266868, 0.7226792859456611)
+      example: (('bs_2', '20250729_133545', 'run_0', 9), 'pv_match_rate', 0.5, 0.6666666666666666)
+      example: (('bs_2', '20250729_133545', 'run_0', 9), 'timing_score', 0.997868917543411, 0.9793857323734935)
+      example: (('bs_2', '20250729_133545', 'run_0', 9), 'full_score', 0.5995737835086823, 0.729210479808032)
+  debug (GT vs GT): 408 rows
+    max |deviation|: pv_match_rate=0, timing_score=4.44e-16, temp_score=1, full_score=0.2
+    undefined in the package (NaN), a number in the paper (not in max |deviation|): timing_score=204
+    pass flags compared: full_match=408
+    distinct rows differing in any field or flag: 205
+    rows differing (> 1e-9, or flag differs): full_match=1, full_score=10, temp_score=1, timing_score=204
+      example: (('debug', '20250915_185437', 'run_0', 4), 'timing_score', nan, 1.0)
+      example: (('debug', '20250915_185437', 'run_0', 4), 'full_score', 0.5, 0.6000000000000001)
+      example: (('debug', '20250915_185437', 'run_0', 5), 'timing_score', nan, 1.0)
+      example: (('debug', '20250915_185437', 'run_0', 6), 'timing_score', nan, 1.0)
+      example: (('debug', '20250915_185437', 'run_0', 7), 'timing_score', nan, 1.0)
+      example: (('debug', '20250915_185437', 'run_0', 8), 'timing_score', nan, 1.0)
+      example: (('debug', '20250915_185437', 'run_0', 9), 'timing_score', nan, 1.0)
+      example: (('debug', '20250915_185437', 'run_0', 9), 'full_score', 0.5, 0.6000000000000001)
+      example: (('debug', '20250915_185437', 'run_0', 10), 'timing_score', nan, 1.0)
+      example: (('debug', '20250915_185437', 'run_0', 11), 'timing_score', nan, 1.0)
+B. Best of all references (package evaluate_best_of vs original selection loop)
+  models: 6016 rows
+    max |deviation|: pv_match_rate=0.5, timing_score=0.0597, temp_score=1, full_score=0.5
+    undefined in the package (NaN), a number in the paper (not in max |deviation|): timing_score=649
+    pass flags compared: full_match=6016
+    distinct rows differing in any field or flag: 716
+    rows differing (> 1e-9, or flag differs): full_match=15, full_score=372, pv_match_rate=51, temp_score=19, timing_score=697
+      example: (('athene-v2', '20250731_204242', 'run_0', 15), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 15), 'full_score', 0.5, 0.6000000000000001)
+      example: (('athene-v2', '20250731_204242', 'run_0', 66), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 68), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 70), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 91), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 91), 'full_score', 0.5, 0.6000000000000001)
+      example: (('athene-v2', '20250731_204242', 'run_0', 92), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 92), 'full_score', 0.5, 0.6000000000000001)
+      example: (('athene-v2', '20250731_204242', 'run_0', 93), 'timing_score', nan, 1.0)
+C. Corrected, rule G (corr_* columns)
+  models: 524 rows
+    max |deviation|: pv_match_rate=0, timing_score=2.22e-16, temp_score=0, full_score=0.1
+    undefined in the package (NaN), a number in the paper (not in max |deviation|): timing_score=39
+    pass flags compared: full_match=524
+    distinct rows differing in any field or flag: 39
+    rows differing (> 1e-9, or flag differs): full_score=33, timing_score=39
+      example: (('athene-v2', '20250731_204242', 'run_0', 67), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_0', 67), 'full_score', 0.5, 0.6000000000000001)
+      example: (('athene-v2', '20250731_204242', 'run_1', 67), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_1', 67), 'full_score', 0.5, 0.6000000000000001)
+      example: (('athene-v2', '20250731_204242', 'run_2', 67), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_2', 67), 'full_score', 0.5, 0.6000000000000001)
+      example: (('athene-v2-agent', '20250801_011408', 'run_0', 67), 'timing_score', nan, 1.0)
+      example: (('athene-v2-agent', '20250801_011408', 'run_0', 67), 'full_score', 0.5, 0.6000000000000001)
+      example: (('athene-v2-agent', '20250801_011408', 'run_1', 67), 'timing_score', nan, 1.0)
+      example: (('athene-v2-agent', '20250801_011408', 'run_1', 67), 'full_score', 0.5, 0.6000000000000001)
+C. Corrected, rule G plus proposed predicted-trace rule (prop_* columns)
+  models: 538 rows
+    max |deviation|: pv_match_rate=0, timing_score=2.22e-16, temp_score=0, full_score=1.11e-16
+    undefined in the package (NaN), a number in the paper (not in max |deviation|): timing_score=39
+    pass flags compared: full_match=538
+    distinct rows differing in any field or flag: 39
+    rows differing (> 1e-9, or flag differs): timing_score=39
+      example: (('athene-v2', '20250731_204242', 'run_0', 67), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_1', 67), 'timing_score', nan, 1.0)
+      example: (('athene-v2', '20250731_204242', 'run_2', 67), 'timing_score', nan, 1.0)
+      example: (('athene-v2-agent', '20250801_011408', 'run_0', 67), 'timing_score', nan, 1.0)
+      example: (('athene-v2-agent', '20250801_011408', 'run_1', 67), 'timing_score', nan, 1.0)
+      example: (('athene-v2-agent', '20250801_011408', 'run_2', 67), 'timing_score', nan, 1.0)
+      example: (('gemini-2.5-pro-native', '20250915_225846', 'run_0', 112), 'timing_score', nan, 1.0)
+      example: (('gemini-2.5-pro-native', '20250915_225846', 'run_1', 112), 'timing_score', nan, 1.0)
+      example: (('gemini-2.5-pro-native', '20250915_225846', 'run_2', 112), 'timing_score', nan, 1.0)
+      example: (('gpt-5-minimal', '20250819_164312', 'run_0', 113), 'timing_score', nan, 1.0)

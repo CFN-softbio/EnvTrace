@@ -1,0 +1,47 @@
+{
+  "description": "Scoring policy of the EnvTrace paper (Semantic Evaluation of Language Models for Physical System Control), equivalent to the original scorer VISION backend/tests/test_op_cog.py. The per-command ignore lists (ignore_pvs) are part of the dataset, not of this policy: add them to ignore_channels per command (see check_against_paper.py). Two settings keep rules of the original scorer that the package defaults correct: timing.single_matched_pair = full_credit (one matched pair gives timing 1.0) and ignore_applies_to_continuous = false (the temperature facet reads an ignored temperature channel).",
+  "aliases": {},
+  "ignore_channels": [],
+  "aligner": {"name": "difflib"},
+  "sort_by_time": false,
+  "require_channel_match": true,
+  "empty_reference_fails": true,
+  "comparators": {
+    "default": {"type": "absolute_tolerance", "tol": 0.001},
+    "by_channel": {
+      "sam.setOrigin": {"type": "always_true"},
+      "wsam": {"type": "always_true"},
+      "sam.pos": {"type": "always_true"}
+    }
+  },
+  "timing": {
+    "r2_thresh": 0.9,
+    "slope_lo": 0.8,
+    "slope_hi": 1.2,
+    "dur_tol": 0.25,
+    "mape_tol": 1.0,
+    "regression": "pearson",
+    "single_matched_pair": "full_credit"
+  },
+  "continuous_channels": {
+    "XF:11BM-ES:{LINKAM}:TEMP": {
+      "mae_scale": 15.0,
+      "final_scale": 15.0,
+      "mae_thresh": 5.0,
+      "final_thresh": 5.0,
+      "weight": 1.0
+    }
+  },
+  "continuous_weighting": "if_present",
+  "ignore_applies_to_continuous": false,
+  "aggregation": {
+    "weights_without_continuous": {"discrete": 0.8, "timing": 0.2},
+    "weights_with_continuous": {"discrete": 0.6, "timing": 0.2, "continuous": 0.2}
+  },
+  "decision": {
+    "require_discrete_exact": true,
+    "timing_metric_name": "timing",
+    "required_metrics": ["continuous"]
+  },
+  "include_structure": false
+}

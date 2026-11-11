@@ -78,7 +78,7 @@ Please view the [interactive notebook](envtrace/examples/notebooks/EnvTrace_Quic
 
 ```python
 from envtrace.core import Event, Trace, Evaluator, EvaluateRequest
-from envtrace.core import NumericToleranceComparator
+from envtrace.core import AbsoluteToleranceComparator
 
 # Create execution traces (ground truth and predicted)
 gt = Trace([
@@ -93,12 +93,13 @@ pred = Trace([
     Event("det:Acquire", 1.08, 0),
 ])
 
-# Evaluate with default metrics
+# Evaluate with default metrics (the defaults implement the paper's method,
+# see "Defaults and the paper"; the comparator shown is the default one)
 evaluator = Evaluator.default()
 request = EvaluateRequest(
-    gt=gt, 
-    pred=pred, 
-    comparator=NumericToleranceComparator(tol=1e-3)
+    gt=gt,
+    pred=pred,
+    comparator=AbsoluteToleranceComparator(tol=1e-3),  # abs(a - b) < 1e-3
 )
 result = evaluator.evaluate(request)
 
@@ -159,29 +160,40 @@ Alignment (first rows, discrete events only):
 ### Event and Trace
 - Event: `(channel: str, timestamp: float, value: Any, meta: dict)` represents a single environment change.
 - Trace: an ordered list of Events with helpers for sorting, canonicalization, filtering, and JSON I/O.
+- The evaluator keeps the recorded order of the events (`sort_by_time=False`, the default). Pass
+  `sort_by_time=True` (or call `Trace.sort_by_time()`) if your trace is assembled from several
+  sources and is not in time order.
 
 ### Aligners
-- Sequence alignment is performed over channel tokens (values are checked later).
+- Sequence alignment is performed over channel tokens (values are checked later). An aligned pair
+  counts as a match only if both channels are equal and the values match
+  (`require_channel_match=True`, the default); pairs inside a difflib `replace` block are paired
+  by position.
 - Default: DifflibAligner (stable, fast).
 - You may introduce other aligners (Needleman–Wunsch, DTW for continuous), by implementing the `SequenceAligner` protocol.
 
 ### Comparators
 - A ValueComparator decides whether two values match for a given channel. Built-ins:
+  - AbsoluteToleranceComparator (the default, tol 1e-3): `abs(float(a) - float(b)) < tol`;
+    values that cannot be converted to float are compared as strings.
   - ExactEqualityComparator: numeric equality or string equality.
-  - NumericToleranceComparator: numeric match within a relative tolerance.
+  - NumericToleranceComparator (alias RelativeToleranceComparator): numeric match within a
+    RELATIVE tolerance (`math.isclose(a, b, rel_tol=tol, abs_tol=0)`). It was the default before
+    the change described in [CHANGELOG.md](CHANGELOG.md); note that it never matches a value
+    against exactly 0.0 and that it widens with the magnitude.
   - AlwaysTrueComparator: always match (useful for function-call markers where value does not matter).
 - You can override comparators per channel:
 ```python
-from envtrace.core import ExactEqualityComparator, NumericToleranceComparator
+from envtrace.core import AbsoluteToleranceComparator, ExactEqualityComparator, RelativeToleranceComparator
 
 comparator_map = {
-    "det:Acquire": ExactEqualityComparator(),       # exact match for detector toggles
-    "motor:x":     NumericToleranceComparator(1e-2) # fuzzy match for motor values (1% rel tol)
+    "det:Acquire": ExactEqualityComparator(),        # exact match for detector toggles
+    "motor:x":     RelativeToleranceComparator(1e-2) # fuzzy match for motor values (1% rel tol)
 }
 req = EvaluateRequest(
     gt=gt, pred=pred,
-    comparator=NumericToleranceComparator(1e-3),    # default comparator
-    comparators_by_channel=comparator_map,          # per-channel overrides
+    comparator=AbsoluteToleranceComparator(1e-3),    # default comparator
+    comparators_by_channel=comparator_map,           # per-channel overrides
 )
 ```
 
@@ -201,6 +213,8 @@ EnvTrace computes multiple metrics to assess different aspects of code behavior:
   - Slope (overall rate: 1.0 = perfect match)
   - Duration ratio
   - MAPE (Mean Absolute Percentage Error of intervals)
+- **Matched pairs**: 0 gives 0 and fail; exactly 1 gives an undefined score (`NaN`, the check does
+  not apply), `TimingMetric(single_matched_pair="full_credit")` gives 1.0 instead
 - **Key for**: Real-time systems, synchronized operations
 
 #### Continuous Profile Metric
@@ -218,16 +232,29 @@ EnvTrace computes multiple metrics to assess different aspects of code behavior:
 
 ### 5. Scoring and Decisions
 
-**Full Score** (continuous, 0.0–1.0):
+**Full Score** (continuous, 0.0 to 1.0):
 ```
-Without continuous channels: 0.8 * discrete + 0.2 * timing
-With continuous channels:    0.6 * discrete + 0.2 * timing + 0.2 * continuous
+No event of a continuous channel in either trace: 0.8 * discrete + 0.2 * timing
+A continuous channel has an event in gt or pred:  0.6 * discrete + 0.2 * timing + 0.2 * continuous
 ```
+(`continuous_weighting="if_present"`, the default; `"always"` uses the second line whenever
+`continuous_channels` is configured, the behaviour before the change in CHANGELOG.md.)
+
+With exactly one matched pair there is no pacing to measure, so the timing facet is undefined
+(score `NaN`, `details["undefined"] = True`, written as `null` in the JSON report) and left out;
+the other weights are scaled up proportionally: `discrete` alone without a continuous channel,
+`0.75 * discrete + 0.25 * continuous` with one. 0 matched pairs give timing 0; 2 or more are
+scored as above. A continuous channel listed in `ignore_channels` is left out of the continuous
+facet too, so it does not switch the weights. Both are corrections of the paper's original scorer
+(see "Defaults and the paper").
 
 **Binary Accuracy** (strict pass/fail):
-- Requires exact discrete match
-- Requires timing thresholds met (R² ≥ 0.9, slope ∈ [0.8, 1.2], etc.)
-- Requires continuous thresholds met (if applicable)
+- Requires exact discrete match (equal counts, no insertions or deletions, every pair matches)
+- Requires timing thresholds met (R² ≥ 0.9, slope ∈ [0.8, 1.2], duration within 25%, MAPE ≤ 100%);
+  an undefined timing facet (one matched pair) does not fail it
+- Requires the continuous thresholds (MAE ≤ 5, final difference ≤ 5 by default) whenever a
+  continuous channel has an event in either trace (`BinaryDecision(require_continuous=True)`,
+  the default)
 
 **Custom scoring:**
 ```python
@@ -238,6 +265,71 @@ def custom_formula(metrics):
 
 evaluator = Evaluator(aggregator=WeightedAggregator(formula=custom_formula))
 ```
+A custom formula receives an undefined timing facet as `NaN`; handle it (for example with
+`math.isnan`), or the full score is `NaN`.
+
+### 6. Defaults and the paper
+
+The defaults implement the method of the EnvTrace paper ("Semantic Evaluation of Language
+Models for Physical System Control"), whose numbers were produced by the original scorer
+[`backend/tests/test_op_cog.py`](https://github.com/CFN-softbio/VISION/blob/main/backend/tests/test_op_cog.py),
+with two corrections of that scorer (the last two rows of the table). Every earlier default is
+still available through an explicit option:
+
+| Behaviour | Default | Earlier default, explicit option |
+|---|---|---|
+| Pair match | same channel and value | `require_channel_match=False` |
+| Value tolerance | `AbsoluteToleranceComparator(1e-3)`, `abs(a - b) < 1e-3` | `comparator=NumericToleranceComparator(1e-3)` (relative) |
+| Event order | recorded order | `sort_by_time=True` |
+| Reference without discrete events | PV match rate 0, not exact | `empty_reference_fails=False` (two empty traces: 1.0 and exact) |
+| Continuous weights (0.6/0.2/0.2) | only if a continuous channel has an event | `continuous_weighting="always"` |
+| Strict decision | continuous check required when a continuous channel has an event | `BinaryDecision(require_continuous=False)` |
+| `evaluate_best_of(**kwargs)` | every `EvaluateRequest` field | (the earlier version dropped most fields) |
+| Timing, all matched reference timestamps equal | 1.0 and pass if the predicted ones are equal too, else 0.0 and fail | (polyfit raised `LinAlgError`) |
+| Timing, all matched predicted timestamps equal | R² = 0 | (polyfit reported R² = 1) |
+| Timing, exactly one matched pair (correction) | undefined (`NaN`), left out of the full score with the other weights renormalised; does not fail the strict decision | `TimingMetric(single_matched_pair="full_credit")` (1.0 and pass, the paper's scorer) |
+| Continuous channel on the ignore list (correction) | left out of the continuous facet, the weight switch and the decision | `ignore_applies_to_continuous=False` (still scored, the paper's scorer) |
+
+The two corrections: with one matched pair the paper's scorer gives full timing credit (+0.2)
+to a trace that has nothing to time, also when the PV match rate is below 1; and it scores the
+temperature facet from the unfiltered traces even when the command's ignore list contains the
+temperature readback, so a correct program can lose 0.2.
+
+In a config file the same options are top-level keys (`require_channel_match`, `sort_by_time`,
+`empty_reference_fails`, `continuous_weighting`, `ignore_applies_to_continuous`,
+`no_discrete_reference_scores_zero`), `timing.single_matched_pair` (`"undefined"` or
+`"full_credit"`) and `decision.require_continuous`; comparator types are
+`absolute_tolerance` (the default), `numeric_tolerance` (alias `relative_tolerance`), `exact`
+and `always_true`, and an unknown type raises `ValueError`.
+
+What the defaults cannot know, and you have to pass:
+- Which channels are continuous (`continuous_channels`), for example the temperature readback.
+- Per-command ignore lists (`ignore_channels`).
+- Channels whose values must not be compared. The paper's scorer logs some function calls
+  (`sam.setOrigin`, `wsam`, `sam.pos`) as events whose value is the argument SOURCE TEXT, and
+  matches them by name only. Do the same with an `AlwaysTrueComparator` per channel
+  (`comparators_by_channel`, or `"by_channel": {"sam.setOrigin": {"type": "always_true"}}` in a
+  config). Name-only matching also hides real argument differences (for example different axes).
+
+Two rules of the paper's harness are not trace scoring and are opt-in:
+- `no_discrete_reference_scores_zero=True`: if the reference (in `evaluate_best_of`, every
+  reference) has no discrete event, the result is 0 on every facet and fails, without scoring.
+- Exact code match: `envtrace.core.exact_code_match(generated_code, reference_codes)` (equal
+  after removing `#` comments and surrounding whitespace) and `exact_code_match_result()` (every
+  facet 1.0, passes). The evaluator works on traces only, so call these before evaluating.
+
+`envtrace/examples/paper/paper_config.json` reproduces every stored score of the paper's main
+batch (13,096 rows, `check_against_paper.py`); it sets `timing.single_matched_pair = "full_credit"`
+and `ignore_applies_to_continuous = false` to keep the paper's rules. The defaults with no config
+file, given only the continuous temperature channel and the per-command ignore lists
+(`check_against_paper.py --defaults`), give the paper's full score on 5,644 of the 6,016 scored
+model rows. The other 372: 51 `sam.setOrigin` pairs whose argument text differs, which the
+paper's scorer matches by name only (see above; the only strict-decision differences); 321 rows
+changed by the two corrections (302 with one matched pair and a PV match rate below 1, lower by
+0.10 to 0.19; 19 with the temperature readback ignored, higher by 0.13 to 0.20). The timing score
+is undefined on the 648 rows with one matched pair. R² and slope come from `numpy.polyfit` by
+default; `timing.regression = "pearson"` gives the `scipy.stats.linregress` formulas of the
+paper's scorer (the two agree to rounding).
 
 ---
 
@@ -338,8 +430,9 @@ continuous_config = {
 request = EvaluateRequest(
     gt=gt,
     pred=pred,
-    continuous_channels=continuous_config,
-    ignore_channels={"stage:temp"},  # Exclude from discrete matching
+    continuous_channels=continuous_config,  # also excluded from discrete matching
+    # Do not list stage:temp in ignore_channels: an ignored continuous channel is left out
+    # of the continuous facet too (ignore_applies_to_continuous=True, the default).
 )
 
 result = evaluator.evaluate(request)
@@ -385,7 +478,7 @@ For complex evaluations, use JSON or YAML configuration files:
   },
   "comparators": {
     "default": {
-      "type": "numeric_tolerance",
+      "type": "absolute_tolerance",
       "tol": 0.001
     },
     "by_channel": {
@@ -710,7 +803,7 @@ print("Structure score:", res.metrics["structure"].score)
 ```
 
 Notes:
-- Temperature channel is excluded from discrete alignment via `ignore_channels` and handled by the `continuous_channels` config.
+- Temperature channel is excluded from discrete alignment because it is listed in `continuous_channels`, which handles it (listing it in `ignore_channels` as well would drop it from the continuous facet).
 - AcquireTime is excluded from discrete matching because it’s a parameter-setting PV rather than a discrete action.
 - Per-channel comparators give fine-grained control over numeric tolerated matching versus exact toggles.
 
@@ -731,7 +824,7 @@ Notes:
       "ignore_channels": ["det:AcquireTime"],
       "aligner": {"name": "difflib"},
       "comparators": {
-        "default": {"type": "numeric_tolerance", "tol": 0.001},
+        "default": {"type": "absolute_tolerance", "tol": 0.001},
         "by_channel": {
           "det:Acquire": {"type": "exact"},
           "motor:x": {"type": "numeric_tolerance", "tol": 0.01}
@@ -778,8 +871,9 @@ Notes:
 - SequenceAligner (protocol), DifflibAligner (default).
 - Comparators:
   - ValueComparator (protocol),
+  - AbsoluteToleranceComparator (default),
   - ExactEqualityComparator,
-  - NumericToleranceComparator,
+  - NumericToleranceComparator (relative; alias RelativeToleranceComparator),
   - AlwaysTrueComparator,
   - get_comparator_for_channel(default, comparator_map, channel).
 - Metrics:
@@ -790,11 +884,12 @@ Notes:
   - StructureMetric.
 - Scoring:
   - WeightedAggregator(weights=None, use_continuous=None, formula=None),
-  - BinaryDecision(require_discrete_exact=True, timing_metric_name="timing").
+  - BinaryDecision(require_discrete_exact=True, timing_metric_name="timing", required_metric_names=None, require_continuous=True).
 - Evaluator:
-  - EvaluateRequest(gt, pred, key_fn, aligner, comparator, comparators_by_channel, ignore_channels, alias_map, use_continuous, continuous_channels, include_structure),
+  - EvaluateRequest(gt, pred, key_fn, aligner, comparator, comparators_by_channel, ignore_channels, alias_map, use_continuous, continuous_channels, include_structure, timing_metric, continuous_metric, custom_metrics, sort_by_time, require_channel_match, empty_reference_fails, continuous_weighting, ignore_applies_to_continuous, no_discrete_reference_scores_zero),
   - evaluate(req) -> EvaluateResult,
-  - evaluate_best_of(gt_list, pred, **kwargs) -> (EvaluateResult, best_index).
+  - evaluate_best_of(gt_list, pred, template=None, **kwargs) -> (EvaluateResult, best_index); kwargs are EvaluateRequest fields.
+- Harness rules: exact_code_match(generated_code, reference_codes), exact_code_match_result(), strip_comments(code).
 
 If you have questions or want to contribute adapters (EPICS, Bluesky, etc.) or additional metrics, please open an issue or PR.
 

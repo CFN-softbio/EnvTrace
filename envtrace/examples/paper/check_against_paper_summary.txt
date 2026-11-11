@@ -1,0 +1,54 @@
+check_against_paper.py: envtrace with paper_config.json versus the paper's scores
+batch: saved_named_runs/new_prompt_new_dataset_12_8 (all model folders except archived); tolerance 1e-09
+
+best-of: rows with more than one reference: 3390
+best-of: selected reference differs: 0
+debug (GT vs GT): scored by the package: 408
+models: envtrace.core.exact_code_match() differs from the stored exact_match: 0
+models: exact code match (harness rule, 1/1/1/1): 6632
+models: scored by the package: 6016
+scientists (bs_1, bs_2): envtrace.core.exact_code_match() differs from the stored exact_match: 0
+scientists (bs_1, bs_2): scored by the package: 40
+rows where the package returns NaN in a score: 0
+
+A. Stored values (pass flag against the stored full_match column, where present)
+  models: 12648 rows
+    max |deviation|: pv_match_rate=0, timing_score=7.77e-16, temp_score=2.22e-16, full_score=2.22e-16
+    pass flags compared: full_match=3264
+    rows differing (> 1e-9, or flag differs): none
+  scientists (bs_1, bs_2): 40 rows
+    max |deviation|: pv_match_rate=0, timing_score=4.44e-16, temp_score=1.11e-16, full_score=2.22e-16
+    pass flags compared: 0
+    rows differing (> 1e-9, or flag differs): none
+  debug (GT vs GT): 408 rows
+    max |deviation|: pv_match_rate=0, timing_score=4.44e-16, temp_score=0, full_score=2.22e-16
+    pass flags compared: full_match=408
+    rows differing (> 1e-9, or flag differs): none
+A'. Same rows, against the original scorer (orig_scoring.py), incl. pass flag
+  models: 6016 rows
+    max |deviation|: pv_match_rate=0, timing_score=0, temp_score=0, full_score=0
+    pass flags compared: full_match=6016
+    rows differing (> 1e-9, or flag differs): none
+  scientists (bs_1, bs_2): 40 rows
+    max |deviation|: pv_match_rate=0, timing_score=0, temp_score=0, full_score=0
+    pass flags compared: full_match=40
+    rows differing (> 1e-9, or flag differs): none
+  debug (GT vs GT): 408 rows
+    max |deviation|: pv_match_rate=0, timing_score=0, temp_score=0, full_score=0
+    pass flags compared: full_match=408
+    rows differing (> 1e-9, or flag differs): none
+B. Best of all references (package evaluate_best_of vs original selection loop)
+  models: 6016 rows
+    max |deviation|: pv_match_rate=0, timing_score=0, temp_score=0, full_score=0
+    pass flags compared: full_match=6016
+    rows differing (> 1e-9, or flag differs): none
+C. Corrected, rule G (corr_* columns)
+  models: 524 rows
+    max |deviation|: pv_match_rate=0, timing_score=0, temp_score=0, full_score=0
+    pass flags compared: full_match=524
+    rows differing (> 1e-9, or flag differs): none
+C. Corrected, rule G plus proposed predicted-trace rule (prop_* columns)
+  models: 538 rows
+    max |deviation|: pv_match_rate=0, timing_score=0, temp_score=0, full_score=0
+    pass flags compared: full_match=538
+    rows differing (> 1e-9, or flag differs): none

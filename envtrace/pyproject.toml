@@ -12,7 +12,6 @@ authors = [{ name = "EnvTrace Contributors" }]
 keywords = ["evaluation", "digital twin", "trace alignment", "LLM", "simulation"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
 ]
 license = "Apache-2.0"
@@ -28,9 +27,12 @@ dev = [
     "pytest>=7.0.0",
 ]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["envtrace*"]
+# This file sits inside the package folder itself (there is no inner envtrace/ folder),
+# so the package is mapped onto "." explicitly. The license is given by the SPDX
+# expression above; PEP 639 forbids a license classifier next to it.
+[tool.setuptools]
+package-dir = { "envtrace" = "." }
+packages = ["envtrace", "envtrace.core", "envtrace.io"]
 
 [tool.black]
 line-length = 100
