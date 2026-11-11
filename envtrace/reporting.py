@@ -215,10 +215,12 @@ def format_metrics_summary(
 
 
 def _decision_breakdown(decision: BinaryDecision, metrics: Dict[str, MetricResult]) -> Dict[str, Any]:
+    required = decision.required_names(metrics) if hasattr(decision, "required_names") \
+        else list(decision.required_metric_names)
     out: Dict[str, Any] = {
         "require_discrete_exact": decision.require_discrete_exact,
         "timing_metric_name": decision.timing_metric_name,
-        "required_metrics": list(decision.required_metric_names),
+        "required_metrics": required,
         "passes": {},  # per-metric pass/fail considered by decision
     }
     # Discrete
@@ -228,8 +230,8 @@ def _decision_breakdown(decision: BinaryDecision, metrics: Dict[str, MetricResul
     # Timing
     t = metrics.get(decision.timing_metric_name)
     out["passes"][decision.timing_metric_name] = bool(t and t.binary_pass)
-    # Additional required metrics
-    for name in decision.required_metric_names:
+    # Additional required metrics (including "continuous" when it is involved)
+    for name in required:
         m = metrics.get(name)
         out["passes"][name] = bool(m and m.binary_pass)
     return out

@@ -37,16 +37,46 @@ class WeightedAggregator:
             total += w * float(m.score)
         return total
 
+def continuous_involved(metrics: Dict[str, MetricResult]) -> bool:
+    """True if a continuous metric was computed and a continuous channel has an event.
+
+    The evaluator records this as details["involved"]; a continuous metric built
+    elsewhere without that key counts as involved.
+    """
+    m = metrics.get("continuous")
+    if m is None:
+        return False
+    return bool((m.details or {}).get("involved", True))
+
+
 class BinaryDecision:
     def __init__(
         self,
         require_discrete_exact: bool = True,
         timing_metric_name: str = "timing",
         required_metric_names: List[str] | None = None,
+        require_continuous: bool = True,
     ) -> None:
+        """
+        Strict pass/fail ("EnvTrace accuracy"): discrete exact AND timing pass AND
+        every metric in required_metric_names passes.
+
+        require_continuous (default True): also require the continuous check whenever
+        a continuous channel is involved (an event of a configured continuous channel
+        in the reference or the prediction), as in the paper. False restores the
+        behaviour before the fix-paper-defaults change (the continuous check counts
+        only if "continuous" is listed in required_metric_names).
+        """
         self.require_discrete_exact = require_discrete_exact
         self.timing_metric_name = timing_metric_name
         self.required_metric_names = required_metric_names or []
+        self.require_continuous = require_continuous
+
+    def required_names(self, metrics: Dict[str, MetricResult]) -> List[str]:
+        names = list(self.required_metric_names)
+        if self.require_continuous and continuous_involved(metrics) and "continuous" not in names:
+            names.append("continuous")
+        return names
 
     def decide(self, metrics: Dict[str, MetricResult]) -> bool:
         if self.require_discrete_exact:
@@ -56,7 +86,7 @@ class BinaryDecision:
         timing = metrics.get(self.timing_metric_name)
         if not timing or not bool(timing.binary_pass):
             return False
-        for name in self.required_metric_names:
+        for name in self.required_names(metrics):
             m = metrics.get(name)
             if not m or not bool(m.binary_pass):
                 return False

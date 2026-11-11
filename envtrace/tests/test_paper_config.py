@@ -47,16 +47,21 @@ def test_require_channel_match_in_replace_block():
     pred = [Event("B", 0.0, 0)]
     pairs = _pairs(gt, pred)
     assert pairs == [(gt[0], pred[0])]            # a 'replace' pair with different channels
-    legacy = DiscreteMatchMetric().evaluate(pairs)
-    assert legacy.score == 1.0                    # earlier behaviour, kept as default
+    legacy = DiscreteMatchMetric(require_channel_match=False).evaluate(pairs)
+    assert legacy.score == 1.0                    # earlier default, still reachable
     strict = DiscreteMatchMetric(require_channel_match=True).evaluate(pairs)
     assert strict.score == 0.0 and strict.binary_pass is False
+    assert DiscreteMatchMetric().evaluate(pairs).score == 0.0   # the default since fix-paper-defaults
     t = TimingMetric().evaluate(pairs, comparator=NumericToleranceComparator(), require_channel_match=True)
     assert t.score == 0.0 and t.binary_pass is False
+    assert TimingMetric().evaluate(pairs, comparator=NumericToleranceComparator()).score == 0.0
+    t = TimingMetric().evaluate(pairs, comparator=NumericToleranceComparator(), require_channel_match=False)
+    assert t.score == 1.0
 
 
 def test_empty_reference_fails():
-    assert DiscreteMatchMetric().evaluate([]).score == 1.0
+    assert DiscreteMatchMetric(empty_reference_fails=False).evaluate([]).score == 1.0
+    assert DiscreteMatchMetric().evaluate([]).score == 0.0      # the default since fix-paper-defaults
     res = DiscreteMatchMetric(empty_reference_fails=True).evaluate([])
     assert res.score == 0.0 and res.binary_pass is False
     assert res.details["mismatch_rate"] == 1.0
@@ -92,8 +97,10 @@ def test_sort_by_time_false_keeps_recorded_order():
     gt = Trace([Event("A", 0.0, 1), Event("B", 1.0, 2)])
     pred = Trace([Event("A", 1.0, 1), Event("B", 0.9, 2)])   # recorded A then B, B earlier
     ev = Evaluator()
-    by_time = ev.evaluate(EvaluateRequest(gt=gt, pred=pred))
+    by_time = ev.evaluate(EvaluateRequest(gt=gt, pred=pred, sort_by_time=True))
     recorded = ev.evaluate(EvaluateRequest(gt=gt, pred=pred, sort_by_time=False))
+    default = ev.evaluate(EvaluateRequest(gt=gt, pred=pred))   # recorded order since fix-paper-defaults
+    assert default.metrics["discrete"].score == 1.0
     assert [p.channel for _, p in by_time.alignment if p] == ["B", "A"]
     assert by_time.metrics["discrete"].score < 1.0
     assert [p.channel for _, p in recorded.alignment if p] == ["A", "B"]
@@ -105,9 +112,12 @@ def test_continuous_weighting_if_present():
     gt = Trace([Event("A", 0.0, 1), Event("B", 1.0, 2)])
     pred = Trace([Event("A", 0.0, 1), Event("B", 1.0, 3)])
     ev = Evaluator()
-    always = ev.evaluate(EvaluateRequest(gt=gt, pred=pred, continuous_channels=cc))
+    always = ev.evaluate(EvaluateRequest(gt=gt, pred=pred, continuous_channels=cc,
+                                         continuous_weighting="always"))
     present = ev.evaluate(EvaluateRequest(gt=gt, pred=pred, continuous_channels=cc,
                                           continuous_weighting="if_present"))
+    default = ev.evaluate(EvaluateRequest(gt=gt, pred=pred, continuous_channels=cc))
+    assert default.full_score == present.full_score             # if_present since fix-paper-defaults
     # no temperature event: continuous scores 1.0 in both, but only 'always' weights it
     assert always.metrics["continuous"].score == 1.0
     assert math.isclose(always.full_score, 0.6 * 0.5 + 0.2 * 1.0 + 0.2 * 1.0)

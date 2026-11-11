@@ -7,9 +7,9 @@ see analysis/envtrace_vs_vision/out/synthetic.txt).
 
 Three groups:
   1. examples/paper/paper_config.json reproduces the original scorer (must pass).
-  2. KNOWN DEVIATIONS of the package defaults from the original scorer and the paper,
-     marked xfail(strict=True): each assertion states the paper's behaviour and fails
-     today. A fix of the default makes the test pass, and strict xfail then reports it.
+  2. Package defaults versus the paper's behaviour. On the audit branch these were
+     KNOWN DEVIATIONS marked xfail(strict=True); the fix-paper-defaults change made the
+     paper's behaviour the default, so they now pass without a marker.
   3. Rules shared by both implementations that the paper does not state (pass; they
      document behaviour, they do not endorse it).
 """
@@ -83,45 +83,45 @@ def test_paper_config_channel_check_with_value_free_function_events():
     assert paper(gt, pred, require_channel_match=False).full_score == pytest.approx(1.0)
 
 
-# 2. known deviations of the defaults ------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="KNOWN DEVIATION: no channel check on aligned pairs")
+# 2. defaults = the paper's behaviour (formerly known deviations) ------------------------------------------------
 def test_default_requires_equal_channel():
+    # Fixed on branch fix-paper-defaults (was a known deviation: no channel check on aligned pairs).
     res = default(*S1)
     assert res.metrics["discrete"].score == 0.0 and res.accuracy is False
 
 
-@pytest.mark.xfail(strict=True, reason="KNOWN DEVIATION: relative tolerance fails float noise at 0")
 def test_default_tolerance_absolute_near_zero():
+    # Fixed on branch fix-paper-defaults (was a known deviation: relative tolerance fails float noise at 0).
     assert default(*S2).metrics["discrete"].score == 1.0
 
 
-@pytest.mark.xfail(strict=True, reason="KNOWN DEVIATION: relative tolerance accepts 313.5 vs 313.6")
 def test_default_tolerance_not_relative_for_large_values():
+    # Fixed on branch fix-paper-defaults (was a known deviation: relative tolerance accepts 313.5 vs 313.6).
     assert default(*S2B).metrics["discrete"].score == 0.0
 
 
-@pytest.mark.xfail(strict=True, reason="KNOWN DEVIATION: two empty traces score 0.8 (paper: 0)")
 def test_default_empty_reference():
+    # Fixed on branch fix-paper-defaults (was a known deviation: two empty traces score 0.8 (paper: 0)).
     assert default(*S3).full_score == 0.0
 
 
-@pytest.mark.xfail(strict=True, reason="KNOWN DEVIATION: continuous weights used without temperature events")
 def test_default_weights_without_temperature_events():
+    # Fixed on branch fix-paper-defaults (was a known deviation: continuous weights used without temperature events).
     assert default(*S4).full_score == pytest.approx(0.6)
 
 
-@pytest.mark.xfail(strict=True, reason="KNOWN DEVIATION: strict decision ignores the continuous check")
 def test_default_decision_requires_continuous_check():
+    # Fixed on branch fix-paper-defaults (was a known deviation: strict decision ignores the continuous check).
     assert default(*S5).accuracy is False
 
 
-@pytest.mark.xfail(strict=True, reason="KNOWN DEVIATION: sort by time reorders recorded events")
 def test_default_keeps_recorded_order():
+    # Fixed on branch fix-paper-defaults (was a known deviation: sort by time reorders recorded events).
     assert default(*S6).metrics["discrete"].score == 1.0
 
 
-@pytest.mark.xfail(strict=True, reason="KNOWN DEVIATION: evaluate_best_of(**kwargs) drops continuous_channels")
 def test_best_of_kwargs_keep_continuous_channels():
+    # Fixed on branch fix-paper-defaults (was a known deviation: evaluate_best_of(**kwargs) drops continuous_channels).
     gt = tr(S5[0])
     pred = tr(S5[1])
     res, _ = Evaluator().evaluate_best_of([gt], pred, continuous_channels={TEMP: {}})

@@ -31,20 +31,25 @@ def load_config(path: str | Path) -> Dict[str, Any]:
     return json.loads(text or "{}")
 
 def _make_comparator(spec: Dict[str, Any] | None) -> ValueComparator:
+    """Comparator from a config spec. No spec: absolute tolerance 1e-3 (the default).
+
+    Types: "absolute_tolerance" (aliases "abs_tolerance", "abs_tol"); "numeric_tolerance"
+    (aliases "tolerance", "tol", "relative_tolerance", "rel_tol"), a RELATIVE tolerance;
+    "exact"; "always_true" (aliases "any", "ignore"). An unknown type raises ValueError.
+    """
     if not spec:
-        return NumericToleranceComparator(tol=1e-3)
-    t = str(spec.get("type", "numeric_tolerance")).lower()
+        return AbsoluteToleranceComparator(tol=1e-3)
+    t = str(spec.get("type", "absolute_tolerance")).lower()
     if t in ("exact", "equals", "eq"):
         return ExactEqualityComparator()
-    if t in ("numeric_tolerance", "tolerance", "tol"):
+    if t in ("numeric_tolerance", "tolerance", "tol", "relative_tolerance", "rel_tol"):
         tol = float(spec.get("tol", 1e-3))
         return NumericToleranceComparator(tol=tol)
     if t in ("absolute_tolerance", "abs_tolerance", "abs_tol"):
         return AbsoluteToleranceComparator(tol=float(spec.get("tol", 1e-3)))
     if t in ("always_true", "any", "ignore"):
         return AlwaysTrueComparator()
-    # default
-    return NumericToleranceComparator(tol=1e-3)
+    raise ValueError(f"unknown comparator type: {t!r}")
 
 def _make_aligner(spec: Dict[str, Any] | None) -> SequenceAligner:
     # For now only DifflibAligner is supported; this hook allows future expansion
@@ -92,6 +97,7 @@ def _make_decision(spec: Dict[str, Any] | None) -> BinaryDecision:
         require_discrete_exact=require_discrete_exact,
         timing_metric_name=timing_metric_name,
         required_metric_names=required_metrics,
+        require_continuous=bool(spec.get("require_continuous", True)),
     )
 
 def build_from_config(gt: Trace, pred: Trace, cfg: Dict[str, Any]) -> Tuple[Evaluator, EvaluateRequest]:
@@ -132,9 +138,11 @@ def build_from_config(gt: Trace, pred: Trace, cfg: Dict[str, Any]) -> Tuple[Eval
         continuous_channels=continuous_channels,
         include_structure=include_structure,
         timing_metric=timing_metric,
-        sort_by_time=bool(cfg.get("sort_by_time", True)),
-        require_channel_match=bool(cfg.get("require_channel_match", False)),
-        empty_reference_fails=bool(cfg.get("empty_reference_fails", False)),
-        continuous_weighting=str(cfg.get("continuous_weighting", "always")),
+        sort_by_time=bool(cfg.get("sort_by_time", False)),
+        require_channel_match=bool(cfg.get("require_channel_match", True)),
+        empty_reference_fails=bool(cfg.get("empty_reference_fails", True)),
+        continuous_weighting=str(cfg.get("continuous_weighting", "if_present")),
+        ignore_applies_to_continuous=bool(cfg.get("ignore_applies_to_continuous", False)),
+        no_discrete_reference_scores_zero=bool(cfg.get("no_discrete_reference_scores_zero", False)),
     )
     return evaluator, req
