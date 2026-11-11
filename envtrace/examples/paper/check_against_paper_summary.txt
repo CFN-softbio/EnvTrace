@@ -4,8 +4,10 @@ batch: saved_named_runs/new_prompt_new_dataset_12_8 (all model folders except ar
 best-of: rows with more than one reference: 3390
 best-of: selected reference differs: 0
 debug (GT vs GT): scored by the package: 408
+models: envtrace.core.exact_code_match() differs from the stored exact_match: 0
 models: exact code match (harness rule, 1/1/1/1): 6632
 models: scored by the package: 6016
+scientists (bs_1, bs_2): envtrace.core.exact_code_match() differs from the stored exact_match: 0
 scientists (bs_1, bs_2): scored by the package: 40
 rows where the package returns NaN in a score: 0
 

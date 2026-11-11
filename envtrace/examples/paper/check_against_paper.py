@@ -16,15 +16,27 @@ with the package. Three checks:
                 and the proposed predicted-trace rule): package versus the corr_* and
                 prop_* columns of analysis/A4_leak/out/corrected_rows_main.csv.gz.
 
-Two rules of the original harness are not trace scoring and live here, not in the
-package: an exact code match scores 1/1/1/1 and passes without running anything, and a
-command whose references have no discrete event at all scores 0/0/0/0 and fails.
+Two rules of the original harness are not trace scoring and are applied here: an exact
+code match scores 1/1/1/1 and passes without running anything (the stored exact_match
+column is used, and checked against the package helper envtrace.core.exact_code_match),
+and a command whose references have no discrete event at all scores 0/0/0/0 and fails
+(the package offers it as the opt-in no_discrete_reference_scores_zero).
 
 B and C, and the pass-flag check on runs without a full_match column, need the original
 scorer copy analysis/A4_leak/orig_scoring.py (and SciPy for it).
 
+--defaults scores with the package defaults and NO configuration file: Evaluator() and
+EvaluateRequest(continuous_channels={TEMP: {}}, ignore_channels=<the command's ignore
+list>). Declaring the temperature channel continuous and passing the per-command ignore
+list describe the environment and the dataset, not the scoring policy. The differences
+that remain come from the two settings of paper_config.json that are not defaults: the
+values of the function-call events wsam, sam.pos and sam.setOrigin are compared (the
+paper's scorer matches them by name only), and R^2 and slope come from numpy.polyfit
+instead of the scipy.stats.linregress formulas (equal up to rounding). Summary file:
+check_against_paper_defaults_summary.txt.
+
 Usage, from the paper working folder (the parent of EnvTrace/):
-    PYTHONPATH=EnvTrace python EnvTrace/envtrace/examples/paper/check_against_paper.py
+    PYTHONPATH=EnvTrace python EnvTrace/envtrace/examples/paper/check_against_paper.py [--defaults]
 """
 from __future__ import annotations
 
@@ -42,7 +54,7 @@ import pandas as pd
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[2]))  # the EnvTrace repository root
 
-from envtrace.core import Event, Trace  # noqa: E402
+from envtrace.core import EvaluateRequest, Evaluator, Event, Trace, exact_code_match  # noqa: E402
 from envtrace.io import build_from_config, load_config  # noqa: E402
 
 FIELDS = ["pv_match_rate", "timing_score", "temp_score", "full_score"]
@@ -80,11 +92,15 @@ def dev(a, b):
 
 
 class Paper:
-    """The package, configured with paper_config.json."""
+    """The package, configured with paper_config.json, or with its defaults (config_path None)."""
 
     def __init__(self, config_path):
-        self.cfg = load_config(config_path)
-        self.evaluator, self.template = build_from_config(Trace([]), Trace([]), self.cfg)
+        if config_path is None:
+            self.evaluator = Evaluator()
+            self.template = EvaluateRequest(gt=Trace([]), pred=Trace([]), continuous_channels={TEMP: {}})
+        else:
+            self.cfg = load_config(config_path)
+            self.evaluator, self.template = build_from_config(Trace([]), Trace([]), self.cfg)
         self.base_ignore = set(self.template.ignore_channels or set())
 
     def _template(self, ignore_pvs):
@@ -202,6 +218,8 @@ def main():
     ap.add_argument("--root", default=str(HERE.parents[3]),
                     help="paper working folder (holds saved_named_runs/ and analysis/)")
     ap.add_argument("--config", default=str(HERE / "paper_config.json"))
+    ap.add_argument("--defaults", action="store_true",
+                    help="package defaults, no configuration file (see the module docstring)")
     ap.add_argument("--batch", default=MAIN,
                     help="batch folder under saved_named_runs (check C only for the main batch)")
     ap.add_argument("--out", default=None,
@@ -209,7 +227,7 @@ def main():
                          "main batch, none for other batches)")
     args = ap.parse_args()
     root = Path(args.root)
-    paper = Paper(args.config)
+    paper = Paper(None if args.defaults else args.config)
     orig = load_orig(root)
 
     cache = None
@@ -233,6 +251,9 @@ def main():
                 key_rows[(model, ts, run, i)] = r
             stored = {f: float(getattr(r, f)) for f in FIELDS}
             stored["full_match"] = as_bool(r.full_match) if "full_match" in df.columns and r.full_match != "" else None
+            if g != "debug (GT vs GT)":  # the debug mode of the harness disables the rule
+                counts[(g, "envtrace.core.exact_code_match() differs from the stored exact_match")] += (
+                    exact_code_match(r.generated_code, json.loads(r.expected_codes)) != as_bool(r.exact_match))
             if as_bool(r.exact_match):
                 counts[(g, "exact code match (harness rule, 1/1/1/1)")] += 1
                 mine = dict(pv_match_rate=1.0, timing_score=1.0, temp_score=1.0, full_score=1.0, full_match=True)
@@ -311,7 +332,8 @@ def main():
                 ref["full_match"] = bool(getattr(c, f"{name}_full_match"))
                 tC[name].add(mine, ref, (c.model, c.timestamp, c.run, int(c.row)))
 
-    lines = [f"check_against_paper.py: envtrace with {Path(args.config).name} versus the paper's scores",
+    what = ("the package defaults (no configuration file)" if args.defaults else Path(args.config).name)
+    lines = [f"check_against_paper.py: envtrace with {what} versus the paper's scores",
              f"batch: saved_named_runs/{args.batch} (all model folders except archived); tolerance {TOL}", ""]
     for (grp, what), n in sorted(counts.items()):
         lines.append(f"{grp}: {what}: {n}")
@@ -334,7 +356,8 @@ def main():
             lines += ["  " + x for x in tC[name].lines("models")]
     text = "\n".join(lines)
     print(text)
-    out = args.out or (str(HERE / "check_against_paper_summary.txt") if args.batch == MAIN else None)
+    name = "check_against_paper_defaults_summary.txt" if args.defaults else "check_against_paper_summary.txt"
+    out = args.out or (str(HERE / name) if args.batch == MAIN else None)
     if out:
         Path(out).write_text(text + "\n", encoding="utf-8")
 
