@@ -142,7 +142,7 @@ def build_from_config(gt: Trace, pred: Trace, cfg: Dict[str, Any]) -> Tuple[Eval
         require_channel_match=bool(cfg.get("require_channel_match", True)),
         empty_reference_fails=bool(cfg.get("empty_reference_fails", True)),
         continuous_weighting=str(cfg.get("continuous_weighting", "if_present")),
-        ignore_applies_to_continuous=bool(cfg.get("ignore_applies_to_continuous", False)),
+        ignore_applies_to_continuous=bool(cfg.get("ignore_applies_to_continuous", True)),
         no_discrete_reference_scores_zero=bool(cfg.get("no_discrete_reference_scores_zero", False)),
     )
     return evaluator, req

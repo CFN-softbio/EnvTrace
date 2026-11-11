@@ -53,11 +53,12 @@ class EvaluateRequest:
     # (as in the paper). "always": the earlier default, the continuous weights are used
     # whenever continuous_channels is configured (or use_continuous is True).
     continuous_weighting: str = "if_present"
-    # False (default, as in the paper's scorer): ignore_channels removes events from
-    # the discrete and timing facets only; the continuous facet reads every event.
-    # True: a continuous channel listed in ignore_channels is left out of the continuous
-    # facet as well (and so of the weight switch and the strict decision).
-    ignore_applies_to_continuous: bool = False
+    # True (default, a correction of the paper's scorer): a continuous channel listed in
+    # ignore_channels is left out of the continuous facet as well (and so of the weight
+    # switch and the strict decision). False: the paper's original scorer and the earlier
+    # default: ignore_channels removes events from the discrete and timing facets only,
+    # and the continuous facet reads every event.
+    ignore_applies_to_continuous: bool = True
     # False (default): every reference is scored. True: the harness rule of the paper's
     # scorer: if the reference (evaluate) or every reference (evaluate_best_of) has no
     # discrete event, the result is 0 on every facet and fails, without scoring.

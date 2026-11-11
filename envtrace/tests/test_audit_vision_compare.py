@@ -143,6 +143,21 @@ def test_shared_rule_single_matched_pair_full_timing_credit():
     assert res.metrics["timing"].score == 1.0 and res.metrics["timing"].binary_pass is True
 
 
+def test_shared_rule_ignored_temperature_still_scored():
+    # The paper's scorer (R6/M4): the temperature facet reads an ignored TEMP channel.
+    # The package default since the ignore-list correction leaves it out.
+    gt = [(X, 0.0, 1.0), (Y, 1.0, 2.0)] + ramp(1.5, 25.0, 1.0, 5)
+    pred = [(X, 0.0, 1.0), (Y, 1.0, 2.0)]
+    ev, tpl = build_from_config(Trace([]), Trace([]), CFG)
+    req = replace(tpl, gt=tr(gt), pred=tr(pred), ignore_channels={TEMP})
+    res = ev.evaluate(req)
+    assert res.metrics["continuous"].score == 0.0 and res.full_score == pytest.approx(0.8)
+    assert res.accuracy is False
+    new = Evaluator().evaluate(EvaluateRequest(gt=tr(gt), pred=tr(pred), continuous_channels={TEMP: {}},
+                                               ignore_channels={TEMP}))
+    assert new.full_score == pytest.approx(1.0) and new.accuracy is True
+
+
 def test_shared_rule_two_matched_pairs_r2_is_one():
     res = paper([(X, 0.0, 1.0), (Y, 1e-4, 2.0)], [(X, 0.0, 1.0), (Y, 5e-4, 2.0)])
     assert res.metrics["timing"].details["r2"] == pytest.approx(1.0)

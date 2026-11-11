@@ -1,5 +1,5 @@
 {
-  "description": "Scoring policy of the EnvTrace paper (Semantic Evaluation of Language Models for Physical System Control), equivalent to the original scorer VISION backend/tests/test_op_cog.py. The per-command ignore lists (ignore_pvs) are part of the dataset, not of this policy: add them to ignore_channels per command (see check_against_paper.py).",
+  "description": "Scoring policy of the EnvTrace paper (Semantic Evaluation of Language Models for Physical System Control), equivalent to the original scorer VISION backend/tests/test_op_cog.py. The per-command ignore lists (ignore_pvs) are part of the dataset, not of this policy: add them to ignore_channels per command (see check_against_paper.py). ignore_applies_to_continuous = false keeps a rule of the original scorer that the package default corrects: the temperature facet reads an ignored temperature channel.",
   "aliases": {},
   "ignore_channels": [],
   "aligner": {"name": "difflib"},
@@ -32,6 +32,7 @@
     }
   },
   "continuous_weighting": "if_present",
+  "ignore_applies_to_continuous": false,
   "aggregation": {
     "weights_without_continuous": {"discrete": 0.8, "timing": 0.2},
     "weights_with_continuous": {"discrete": 0.6, "timing": 0.2, "continuous": 0.2}

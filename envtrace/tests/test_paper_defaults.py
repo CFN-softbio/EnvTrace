@@ -99,8 +99,10 @@ def test_config_defaults_and_unknown_comparator():
     assert req.sort_by_time is False and req.require_channel_match is True
     assert req.empty_reference_fails is True and req.continuous_weighting == "if_present"
     assert (
-        req.ignore_applies_to_continuous is False and req.no_discrete_reference_scores_zero is False
+        req.ignore_applies_to_continuous is True and req.no_discrete_reference_scores_zero is False
     )
+    _, req = build_from_config(Trace(), Trace(), {"ignore_applies_to_continuous": False})
+    assert req.ignore_applies_to_continuous is False
     assert isinstance(req.comparator, AbsoluteToleranceComparator)
     assert ev.decision.require_continuous is True
     _, req = build_from_config(
@@ -170,18 +172,42 @@ def test_best_of_kwargs_override_template():
     assert res.metrics["discrete"].score == 0.0
 
 
-# --- R6: continuous facet honours the ignore list (opt-in) --------------------------
+# --- R6: continuous facet honours the ignore list (default) --------------------------
 def test_ignore_applies_to_continuous():
-    gt = [("SP", 0.0, 50.0)]
-    pred = [("SP", 0.0, 50.0)] + ramp(0.5, 25.0, 1.0, 5)  # temperature only in the prediction
+    gt = [("SP", 0.0, 50.0), ("SP", 1.0, 60.0)]
+    pred = gt + ramp(1.5, 25.0, 1.0, 5)  # temperature only in the prediction
     base = EvaluateRequest(gt=tr(gt), pred=tr(pred), continuous_channels=CC, ignore_channels={TEMP})
     ev = Evaluator()
     default = ev.evaluate(base)
-    assert default.metrics["continuous"].score == 0.0  # the paper's scorer
-    assert default.full_score == pytest.approx(0.8) and default.accuracy is False
-    honour = ev.evaluate(replace(base, ignore_applies_to_continuous=True))
-    assert honour.metrics["continuous"].details["involved"] is False
-    assert honour.full_score == pytest.approx(1.0) and honour.accuracy is True
+    assert base.ignore_applies_to_continuous is True
+    assert default.metrics["continuous"].details["involved"] is False
+    assert default.metrics["continuous"].score == 1.0
+    # no continuous event left: weights 0.8/0.2, strict decision without the continuous check
+    assert default.full_score == pytest.approx(1.0) and default.accuracy is True
+    # the paper's scorer and the earlier default: the ignored channel is still scored
+    paper = ev.evaluate(replace(base, ignore_applies_to_continuous=False))
+    assert paper.metrics["continuous"].score == 0.0
+    assert paper.full_score == pytest.approx(0.8) and paper.accuracy is False
+    # a continuous channel that is not ignored is scored as before
+    other = ev.evaluate(replace(base, ignore_channels={"OTHER"}))
+    assert other.full_score == pytest.approx(0.8) and other.accuracy is False
+    # TEMP stays out of the discrete alignment either way
+    assert len(default.alignment) == len(paper.alignment) == 2
+
+
+def test_ignore_applies_to_continuous_partial():
+    # two continuous channels, one ignored: only the other one is scored
+    cc = {TEMP: {}, "T2": {}}
+    gt = [("SP", 0.0, 1.0), ("SP", 1.0, 2.0), ("T2", 1.5, 30.0)]
+    pred = [("SP", 0.0, 1.0), ("SP", 1.0, 2.0), ("T2", 1.5, 30.0)] + ramp(2.0, 25.0, 1.0, 3)
+    req = EvaluateRequest(gt=tr(gt), pred=tr(pred), continuous_channels=cc, ignore_channels={TEMP})
+    res = Evaluator().evaluate(req)
+    assert set(res.metrics["continuous"].details["per_channel"]) == {"T2"}
+    assert res.full_score == pytest.approx(1.0) and res.accuracy is True
+    old = Evaluator().evaluate(replace(req, ignore_applies_to_continuous=False))
+    assert set(old.metrics["continuous"].details["per_channel"]) == {TEMP, "T2"}
+    assert old.metrics["continuous"].score == pytest.approx(0.5)
+    assert old.full_score == pytest.approx(0.9) and old.accuracy is False
 
 
 # --- D10: harness rules (opt-in) ---------------------------------------------------
