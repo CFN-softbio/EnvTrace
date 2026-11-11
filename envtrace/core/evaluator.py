@@ -14,8 +14,11 @@ CONTINUOUS_WEIGHTING_MODES = ("if_present", "always")
 class EvaluateRequest:
     """One evaluation: a reference trace (gt), a predicted trace and the scoring options.
 
-    The defaults implement the method of the EnvTrace paper (see the README section
-    "Defaults and the paper"); every earlier default is reachable through an explicit
+    The defaults implement the method of the EnvTrace paper, with two corrections of its
+    original scorer: one matched pair leaves the timing facet undefined
+    (TimingMetric(single_matched_pair=...)), and an ignored continuous channel is left out
+    of the continuous facet (ignore_applies_to_continuous). See the README section
+    "Defaults and the paper"; every earlier default is reachable through an explicit
     option, noted per field.
     """
     gt: Trace
@@ -32,6 +35,8 @@ class EvaluateRequest:
     use_continuous: bool = False
     continuous_channels: Optional[Dict[str, Dict[str, float]]] = None  # e.g., {"stage:temp": {"mae_scale": 15.0, "final_scale": 15.0, "mae_thresh": 5.0, "final_thresh": 5.0, "weight": 1.0}}
     include_structure: bool = True
+    # None: TimingMetric() (one matched pair: timing undefined). The paper's scorer:
+    # TimingMetric(single_matched_pair="full_credit", regression="pearson").
     timing_metric: Optional[TimingMetric] = None
     # Optional: override the per-channel continuous metric used inside continuous aggregation.
     # Custom metric should implement evaluate(gt_series, pred_series, channel=None, config=None, **kwargs) -> MetricResult

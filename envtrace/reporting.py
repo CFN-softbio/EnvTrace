@@ -1,4 +1,5 @@
 from __future__ import annotations
+import math
 from typing import Any, Dict, List, Optional, Tuple
 
 from envtrace.core.alignment import Pair
@@ -135,17 +136,35 @@ def _uses_continuous(metrics: Dict[str, MetricResult], aggregator: WeightedAggre
     return bool(use) if use is not None else ("continuous" in metrics)
 
 
+def _applied_weights(metrics: Dict[str, MetricResult], aggregator: WeightedAggregator) -> Dict[str, float]:
+    # The weights the full score used: after leaving out undefined (NaN) facets, such as
+    # timing with one matched pair, and renormalising the others.
+    if hasattr(aggregator, "effective_weights"):
+        return aggregator.effective_weights(metrics)
+    if getattr(aggregator, "weights", None):
+        return aggregator.weights
+    return aggregator.weights_with_cont if _uses_continuous(metrics, aggregator) else aggregator.weights_no_cont
+
+
+def _json_number(x: Any) -> Any:
+    # NaN (an undefined facet) is written as null: json.dump would emit NaN, which is not JSON.
+    return None if isinstance(x, float) and math.isnan(x) else x
+
+
+def _fmt_score(x: Any) -> str:
+    try:
+        return "undefined" if math.isnan(float(x)) else f"{float(x):.3f}"
+    except (TypeError, ValueError):
+        return str(x)
+
+
 def _compute_contributions(
     metrics: Dict[str, MetricResult], aggregator: WeightedAggregator
 ) -> Optional[Dict[str, float]]:
     # Only compute contributions if using weights (no custom formula)
     if getattr(aggregator, "formula", None) is not None:
         return None
-    # Decide which weights apply
-    if getattr(aggregator, "weights", None):
-        weights = aggregator.weights
-    else:
-        weights = aggregator.weights_with_cont if _uses_continuous(metrics, aggregator) else aggregator.weights_no_cont
+    weights = _applied_weights(metrics, aggregator)
     contribs: Dict[str, float] = {}
     total = 0.0
     for name, w in weights.items():
@@ -170,7 +189,7 @@ def format_metrics_summary(
         m = metrics.get(name)
         if not m:
             continue
-        lines.append(f"- {name}: score={m.score:.3f}, pass={m.binary_pass}")
+        lines.append(f"- {name}: score={_fmt_score(m.score)}, pass={m.binary_pass}")
         d = m.details or {}
         if name == "discrete":
             vm = d.get("value_matches")
@@ -179,6 +198,8 @@ def format_metrics_summary(
             if vm is not None and tp is not None:
                 lines.append(f"  · value_matches={vm}/{tp}, mismatch_rate={mmr:.3f}" if mmr is not None else f"  · value_matches={vm}/{tp}")
         elif name == "timing":
+            if d.get("undefined"):
+                lines.append("  · undefined (one matched pair): left out of the full score, weights renormalised")
             for k in ("r2", "slope", "duration_ratio", "mape"):
                 if k in d:
                     val = d[k]
@@ -251,10 +272,12 @@ def build_json_report(
     (e.g., temperature) are filtered before alignment and evaluated separately.
     """
     report: Dict[str, Any] = {
-        "full_score": result.full_score,
+        "full_score": _json_number(result.full_score),
         "accuracy": result.accuracy,
         "metrics": {
-            k: {"score": v.score, "binary_pass": v.binary_pass, "details": v.details}
+            k: {"score": _json_number(v.score), "binary_pass": v.binary_pass,
+                "details": {dk: _json_number(dv) for dk, dv in v.details.items()}
+                if isinstance(v.details, dict) else v.details}
             for k, v in result.metrics.items()
         },
         "alignment": [
@@ -282,12 +305,8 @@ def build_json_report(
         contribs = _compute_contributions(result.metrics, evaluator.aggregator)
         if contribs is not None:
             report["aggregation"] = {
-                "weights": evaluator.aggregator.weights
-                or (
-                    evaluator.aggregator.weights_with_cont
-                    if _uses_continuous(result.metrics, evaluator.aggregator)
-                    else evaluator.aggregator.weights_no_cont
-                ),
+                # the weights applied, after leaving out undefined facets
+                "weights": _applied_weights(result.metrics, evaluator.aggregator),
                 "contributions": contribs,
             }
         else:

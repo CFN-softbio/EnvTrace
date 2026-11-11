@@ -3,6 +3,7 @@ earlier defaults, the degenerate-timing guard, evaluate_best_of(**kwargs), and t
 harness rules (continuous facet honours ignore list, no-discrete-reference rule, exact
 code match)."""
 
+import json
 import math
 from dataclasses import replace
 
@@ -23,7 +24,7 @@ from envtrace.core import (
     strip_comments,
 )
 from envtrace.io import build_from_config
-from envtrace.reporting import build_json_report
+from envtrace.reporting import build_json_report, format_text_report
 
 TEMP = "XF:11BM-ES:{LINKAM}:TEMP"
 CC = {TEMP: {}}
@@ -101,8 +102,15 @@ def test_config_defaults_and_unknown_comparator():
     assert (
         req.ignore_applies_to_continuous is True and req.no_discrete_reference_scores_zero is False
     )
-    _, req = build_from_config(Trace(), Trace(), {"ignore_applies_to_continuous": False})
+    assert req.timing_metric.single_matched_pair == "undefined"
+    _, req = build_from_config(
+        Trace(), Trace(),
+        {"ignore_applies_to_continuous": False, "timing": {"single_matched_pair": "full_credit"}},
+    )
     assert req.ignore_applies_to_continuous is False
+    assert req.timing_metric.single_matched_pair == "full_credit"
+    with pytest.raises(ValueError):
+        build_from_config(Trace(), Trace(), {"timing": {"single_matched_pair": "half"}})
     assert isinstance(req.comparator, AbsoluteToleranceComparator)
     assert ev.decision.require_continuous is True
     _, req = build_from_config(
@@ -208,6 +216,92 @@ def test_ignore_applies_to_continuous_partial():
     assert set(old.metrics["continuous"].details["per_channel"]) == {TEMP, "T2"}
     assert old.metrics["continuous"].score == pytest.approx(0.5)
     assert old.full_score == pytest.approx(0.9) and old.accuracy is False
+
+
+# --- R2/N4: one matched pair leaves timing undefined (default) ----------------------
+ONE_PAIR = ([("X", 0.0, 1.0), ("Y", 1.0, 2.0)], [("X", 0.0, 1.0), ("Y", 1.0, 3.0)])
+
+
+def test_single_matched_pair_timing_undefined():
+    gt, pred = ONE_PAIR
+    res = Evaluator().evaluate(EvaluateRequest(gt=tr(gt), pred=tr(pred)))
+    t = res.metrics["timing"]
+    assert math.isnan(t.score) and t.details["undefined"] is True and t.details["matched_pairs"] == 1
+    assert t.binary_pass is True                 # does not apply, so it does not fail the decision
+    assert res.metrics["discrete"].score == 0.5
+    assert res.full_score == pytest.approx(0.5)  # 0.8/0.2 renormalised: the PV match rate
+    assert res.accuracy is False                 # not PV-exact
+    # the paper's scorer and the earlier default: timing 1.0
+    old = Evaluator().evaluate(EvaluateRequest(gt=tr(gt), pred=tr(pred),
+                                               timing_metric=TimingMetric(single_matched_pair="full_credit")))
+    assert old.metrics["timing"].score == 1.0
+    assert old.full_score == pytest.approx(0.6) and old.accuracy is False
+    with pytest.raises(ValueError):
+        TimingMetric(single_matched_pair="half")
+
+
+def test_single_matched_pair_with_continuous_renormalises():
+    # 0.6/0.2/0.2 with timing undefined: 0.75 x PV + 0.25 x continuous
+    gt = ONE_PAIR[0] + ramp(1.5, 25.0, 1.0, 5)
+    pred = ONE_PAIR[1] + ramp(1.5, 25.0, 1.0, 5)
+    ev = Evaluator()
+    req = EvaluateRequest(gt=tr(gt), pred=tr(pred), continuous_channels=CC)
+    res = ev.evaluate(req)
+    assert res.metrics["continuous"].score == pytest.approx(1.0)
+    assert res.full_score == pytest.approx(0.75 * 0.5 + 0.25 * 1.0)
+    assert ev.aggregator.effective_weights(res.metrics) == pytest.approx({"discrete": 0.75, "continuous": 0.25})
+    old = ev.evaluate(replace(req, timing_metric=TimingMetric(single_matched_pair="full_credit")))
+    assert old.full_score == pytest.approx(0.6 * 0.5 + 0.2 + 0.2)
+
+
+def test_single_matched_pair_exact_still_passes():
+    # one event in each trace, equal: PV-exact, nothing to time; the decision is unchanged
+    one = tr([("X", 0.0, 1.0)])
+    res = Evaluator().evaluate(EvaluateRequest(gt=one, pred=tr([("X", 5.0, 1.0)])))
+    assert math.isnan(res.metrics["timing"].score)
+    assert res.full_score == 1.0 and res.accuracy is True
+
+
+def test_zero_and_two_matched_pairs_unchanged():
+    tm, comp = TimingMetric(), AbsoluteToleranceComparator()
+    zero = tm.evaluate([(Event("X", 0.0, 1.0), Event("X", 0.0, 2.0))], comparator=comp)
+    assert zero.score == 0.0 and zero.binary_pass is False
+    pairs = [(Event("X", 0.0, 1.0), Event("X", 0.0, 1.0)), (Event("Y", 1.0, 2.0), Event("Y", 1.0, 2.0))]
+    for mode in ("undefined", "full_credit"):
+        two = TimingMetric(single_matched_pair=mode).evaluate(pairs, comparator=comp)
+        assert two.score == pytest.approx(1.0) and two.binary_pass is True
+
+
+def test_undefined_timing_in_reports():
+    gt, pred = ONE_PAIR
+    ev = Evaluator()
+    req = EvaluateRequest(gt=tr(gt), pred=tr(pred))
+    res = ev.evaluate(req)
+    rep = build_json_report(res, evaluator=ev, req=req)
+    assert rep["metrics"]["timing"]["score"] is None          # NaN written as null
+    assert rep["metrics"]["timing"]["details"]["score"] is None
+    assert rep["aggregation"]["weights"] == pytest.approx({"discrete": 1.0})
+    assert rep["aggregation"]["contributions"]["_sum"] == pytest.approx(res.full_score)
+    json.dumps(rep, allow_nan=False)                           # valid JSON
+    text = format_text_report(res, evaluator=ev, req=req)
+    assert "timing: score=undefined" in text
+
+
+def test_best_of_with_undefined_timing():
+    # selection by the corrected full score: a one-pair reference scores its PV rate only
+    pred = tr([("X", 0.0, 1.0), ("Y", 1.0, 3.0)])
+    refs = [tr([("X", 0.0, 1.0), ("Y", 1.0, 2.0)]),                   # one matched pair: 0.5
+            tr([("X", 0.0, 1.0), ("Y", 1.0, 3.0), ("Z", 2.0, 1.0)])]  # two: 0.8 x 2/3 + 0.2
+    res, idx = Evaluator().evaluate_best_of(refs, pred)
+    assert idx == 1 and res.full_score == pytest.approx(0.8 * 2 / 3 + 0.2)
+
+
+def test_all_weighted_facets_undefined_gives_nan():
+    from envtrace.core import WeightedAggregator
+    gt, pred = ONE_PAIR
+    ev = Evaluator(aggregator=WeightedAggregator(weights={"timing": 1.0}))
+    res = ev.evaluate(EvaluateRequest(gt=tr(gt), pred=tr(pred)))
+    assert math.isnan(res.full_score)
 
 
 # --- D10: harness rules (opt-in) ---------------------------------------------------

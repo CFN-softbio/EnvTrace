@@ -65,6 +65,7 @@ def _make_timing_metric(spec: Dict[str, Any] | None) -> TimingMetric:
         dur_tol=float(spec.get("dur_tol", 0.25)),
         mape_tol=float(spec.get("mape_tol", 1.0)),
         regression=str(spec.get("regression", "polyfit")),
+        single_matched_pair=str(spec.get("single_matched_pair", "undefined")),
     )
 
 def _make_aggregator(spec: Dict[str, Any] | None) -> WeightedAggregator:

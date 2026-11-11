@@ -1,4 +1,5 @@
 from __future__ import annotations
+import math
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Protocol
 from envtrace.core.event import Event
@@ -91,6 +92,19 @@ class DiscreteMatchMetric:
             },
         )
 
+SINGLE_MATCHED_PAIR_MODES = ("undefined", "full_credit")
+
+
+def is_undefined(m: Optional["MetricResult"]) -> bool:
+    """True if a metric result has no defined score (NaN), e.g. timing with one matched pair."""
+    if m is None:
+        return False
+    try:
+        return math.isnan(float(m.score))
+    except (TypeError, ValueError):
+        return False
+
+
 class TimingMetric:
     def __init__(self,
                  r2_thresh: float = 0.90,
@@ -98,16 +112,29 @@ class TimingMetric:
                  slope_hi: float = 1.2,
                  dur_tol: float = 0.25,
                  mape_tol: float = 1.0,
-                 regression: str = "polyfit") -> None:
+                 regression: str = "polyfit",
+                 single_matched_pair: str = "undefined") -> None:
         """
         regression: how slope and R^2 are computed.
             "polyfit" (default): numpy.polyfit, R^2 = 1 - SS_res/SS_tot (1.0 if SS_tot == 0).
             "pearson": the formulas of scipy.stats.linregress (R^2 = r^2 with Pearson r,
                 slope = cov(x, y)/var(x)), as used by the paper's original scorer.
+        single_matched_pair: the timing facet when exactly one aligned pair matches.
+            "undefined" (default): no pacing can be measured from one event, so the
+                score is NaN (details["undefined"] is True) and binary_pass is True (the
+                check does not apply, so it does not fail the strict decision). The
+                WeightedAggregator leaves an undefined facet out and renormalises the
+                remaining weights proportionally (0.8/0.2 gives the PV match rate alone,
+                0.6/0.2/0.2 gives 0.75 x PV + 0.25 x continuous).
+            "full_credit": score 1.0 and pass, the rule of the paper's original scorer
+                and the package default before this option existed.
         """
         if regression not in ("polyfit", "pearson"):
             raise ValueError(f"unknown regression method: {regression!r}")
+        if single_matched_pair not in SINGLE_MATCHED_PAIR_MODES:
+            raise ValueError(f"unknown single_matched_pair mode: {single_matched_pair!r}")
         self.regression = regression
+        self.single_matched_pair = single_matched_pair
         self.r2_thresh = r2_thresh
         self.slope_lo = slope_lo
         self.slope_hi = slope_hi
@@ -155,7 +182,9 @@ class TimingMetric:
         """
         Timing of the matched pairs (aligned, same channel unless require_channel_match
         is False, values equal under the comparator). 0 matched pairs: score 0, fail.
-        1 matched pair: score 1, pass (no regression possible; the paper's rule).
+        1 matched pair: no regression possible. single_matched_pair="undefined" (default):
+        score NaN, details["undefined"] True, pass (the check does not apply);
+        "full_credit": score 1.0 and pass (the paper's original scorer).
 
         Degenerate timestamps (n >= 2), where the regression is undefined (polyfit
         raises LinAlgError, SciPy and "pearson" return NaN):
@@ -187,7 +216,16 @@ class TimingMetric:
                 details={"reason": "no matching PV/value pairs for timing evaluation", "score": 0.0},
             )
         if n < 2:
-            return MetricResult(name="timing", score=1.0, binary_pass=True, details={"score": 1.0})
+            if self.single_matched_pair == "full_credit":
+                return MetricResult(name="timing", score=1.0, binary_pass=True,
+                                    details={"score": 1.0, "matched_pairs": 1})
+            return MetricResult(
+                name="timing",
+                score=float("nan"),
+                binary_pass=True,
+                details={"reason": "one matched pair: no pacing can be measured, timing undefined",
+                         "score": float("nan"), "undefined": True, "matched_pairs": 1},
+            )
 
         gt = np.asarray(matched_gt_ts) - matched_gt_ts[0]
         pr = np.asarray(matched_pr_ts) - matched_pr_ts[0]

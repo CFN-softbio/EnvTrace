@@ -56,6 +56,9 @@ def test_require_channel_match_in_replace_block():
     assert t.score == 0.0 and t.binary_pass is False
     assert TimingMetric().evaluate(pairs, comparator=NumericToleranceComparator()).score == 0.0
     t = TimingMetric().evaluate(pairs, comparator=NumericToleranceComparator(), require_channel_match=False)
+    assert math.isnan(t.score) and t.details["undefined"] is True   # one matched pair (default)
+    t = TimingMetric(single_matched_pair="full_credit").evaluate(
+        pairs, comparator=NumericToleranceComparator(), require_channel_match=False)
     assert t.score == 1.0
 
 
@@ -109,8 +112,9 @@ def test_sort_by_time_false_keeps_recorded_order():
 
 def test_continuous_weighting_if_present():
     cc = {TEMP: {}}
-    gt = Trace([Event("A", 0.0, 1), Event("B", 1.0, 2)])
-    pred = Trace([Event("A", 0.0, 1), Event("B", 1.0, 3)])
+    # two matched pairs (A, B), so timing is defined (1.0); PV match rate 2/3
+    gt = Trace([Event("A", 0.0, 1), Event("B", 1.0, 2), Event("C", 2.0, 3)])
+    pred = Trace([Event("A", 0.0, 1), Event("B", 1.0, 2), Event("C", 2.0, 4)])
     ev = Evaluator()
     always = ev.evaluate(EvaluateRequest(gt=gt, pred=pred, continuous_channels=cc,
                                          continuous_weighting="always"))
@@ -120,8 +124,8 @@ def test_continuous_weighting_if_present():
     assert default.full_score == present.full_score             # if_present since fix-paper-defaults
     # no temperature event: continuous scores 1.0 in both, but only 'always' weights it
     assert always.metrics["continuous"].score == 1.0
-    assert math.isclose(always.full_score, 0.6 * 0.5 + 0.2 * 1.0 + 0.2 * 1.0)
-    assert math.isclose(present.full_score, 0.8 * 0.5 + 0.2 * 1.0)
+    assert math.isclose(always.full_score, 0.6 * 2 / 3 + 0.2 * 1.0 + 0.2 * 1.0)
+    assert math.isclose(present.full_score, 0.8 * 2 / 3 + 0.2 * 1.0)
     rep = build_json_report(present, evaluator=ev)
     assert rep["aggregation"]["weights"] == {"discrete": 0.8, "timing": 0.2}
     # with a temperature event in either trace the continuous weights apply
@@ -129,7 +133,7 @@ def test_continuous_weighting_if_present():
     res = ev.evaluate(EvaluateRequest(gt=gt, pred=pred_t, continuous_channels=cc,
                                       continuous_weighting="if_present"))
     assert res.metrics["continuous"].score == 0.0
-    assert math.isclose(res.full_score, 0.6 * 0.5 + 0.2 * 1.0)
+    assert math.isclose(res.full_score, 0.6 * 2 / 3 + 0.2 * 1.0)
     with pytest.raises(ValueError):
         ev.evaluate(EvaluateRequest(gt=gt, pred=pred, continuous_weighting="sometimes"))
 

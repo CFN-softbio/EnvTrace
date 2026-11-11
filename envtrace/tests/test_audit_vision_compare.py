@@ -107,7 +107,11 @@ def test_default_empty_reference():
 
 def test_default_weights_without_temperature_events():
     # Fixed on branch fix-paper-defaults (was a known deviation: continuous weights used without temperature events).
-    assert default(*S4).full_score == pytest.approx(0.6)
+    # One matched pair: since the single-matched-pair correction the timing facet is
+    # undefined and the full score is the PV match rate (0.5); the paper's scorer gives
+    # 0.8 x 0.5 + 0.2 x 1.0 = 0.6 (group 1). With the continuous weights it would be
+    # 0.75 x 0.5 + 0.25 x 1.0 = 0.625.
+    assert default(*S4).full_score == pytest.approx(0.5)
 
 
 def test_default_decision_requires_continuous_check():
@@ -138,9 +142,14 @@ def test_shared_rule_alignment_by_channel_only():
 
 
 def test_shared_rule_single_matched_pair_full_timing_credit():
+    # The paper's scorer (R2/N4). The package default since the single-matched-pair
+    # correction leaves timing undefined instead (test_paper_defaults.py).
     gt = [(X, 0.0, 1.0), (Y, 1.0, 2.0), (Z, 2.0, 3.0)]
     res = paper(gt, [(X, 0.0, 1.0)])
     assert res.metrics["timing"].score == 1.0 and res.metrics["timing"].binary_pass is True
+    assert res.full_score == pytest.approx(0.8 / 3 + 0.2)
+    new = default(gt, [(X, 0.0, 1.0)])
+    assert new.full_score == pytest.approx(1 / 3) and new.accuracy is False
 
 
 def test_shared_rule_ignored_temperature_still_scored():
